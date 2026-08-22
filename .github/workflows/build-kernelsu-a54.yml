@@ -1,0 +1,196 @@
+# .github/workflows/build-kernelsu-a54.yml
+#
+# Build KernelSU for SM-A546E (android13-5.15)
+# DDK: ghcr.io/ylarod/ddk-min:android14-6.1-20260313
+#      KDIR = /opt/ddk/kdir/android14-6.1  (6.1 tree — intentional, see note)
+#
+# NOTE: We build against the 6.1 DDK tree but inject vermagic
+#   "5.15.189-android13-3-33470412 SMP preempt mod_unload modversions aarch64"
+#   The Samsung KDP patch empties __versions (manual relocation), so no
+#   CRC mismatch at load time. Symbol resolution happens via kallsyms at runtime.
+#
+# NOTE: Pin the DDK image to a digest before production use:
+#   docker inspect --format='{{index .RepoDigests 0}}' \
+#     ghcr.io/ylarod/ddk-min:android14-6.1-20260313
+#   Then replace the tag with ghcr.io/ylarod/ddk-min@sha256:<digest>
+#
+# Output: ksud-a54x-A546EXXSLFZG3-kdp
+
+name: Build KernelSU — SM-A546E (android13-5.15)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+
+      # ── Checkout ────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Clone + patch KernelSU ──────────────────────────────
+      - name: Clone KernelSU v3.2.5
+        run: |
+          git clone --depth=1 --branch v3.2.5 \
+            https://github.com/tiann/KernelSU.git ksu
+          echo "KSU: $(git -C ksu rev-parse --short HEAD)"
+
+      - name: Apply Samsung KDP patch
+        run: |
+          git -C ksu apply \
+            "${GITHUB_WORKSPACE}/kernelsu/patches/KernelSU-v3.2.5-samsung-kdp-rkp-defex.patch"
+          echo "Patch applied"
+
+      # ── Host dependencies — must come before Rust + cargo build ──
+      - name: Install host build dependencies
+        run: sudo apt-get install -y libclang-dev
+
+      - name: Install Rust (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: aarch64-linux-android
+          components: rust-src
+
+      - name: Install Android NDK r29
+        run: |
+          curl -Lo ndk.zip \
+            https://dl.google.com/android/repository/android-ndk-r29-linux.zip
+          unzip -q ndk.zip -d "${HOME}/"
+          echo "NDK=${HOME}/android-ndk-r29" >> "${GITHUB_ENV}"
+          echo "${HOME}/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/bin" \
+            >> "${GITHUB_PATH}"
+
+      # ── Build kernelsu.ko via DDK container ─────────────────
+      - name: Build kernelsu.ko
+        run: |
+          docker run --rm \
+            --user root \
+            -v "${PWD}:/ws" \
+            -w /ws/ksu/kernel \
+            ghcr.io/ylarod/ddk-min:android14-6.1-20260313 \
+            bash -c '
+              set -e
+
+              TARGET="5.15.189-android13-3-33470412"
+
+              echo "KDIR: ${KDIR}"
+              echo "Injecting vermagic: ${TARGET}"
+
+              mkdir -p "${KDIR}/include/config"
+              printf "%s\n" "${TARGET}" > "${KDIR}/include/config/kernel.release"
+
+              UTS="${KDIR}/include/generated/utsrelease.h"
+              if [ -f "${UTS}" ]; then
+                sed -i "s|\(UTS_RELEASE \"\)[^\"]*|\1${TARGET}|" "${UTS}"
+                echo "UTS_RELEASE: $(grep UTS_RELEASE ${UTS})"
+              fi
+
+              echo "Building..."
+              make -C "${KDIR}" M="${PWD}" \
+                ARCH=arm64 \
+                CC=clang \
+                CROSS_COMPILE=aarch64-linux-gnu- \
+                CLANG_TRIPLE=aarch64-linux-gnu- \
+                CONFIG_KSU=m \
+                CONFIG_KSU_SAMSUNG_KDP=y \
+                CONFIG_KSU_SAMSUNG_RKP=y \
+                CONFIG_KSU_SAMSUNG_DEFEX=y \
+                CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y \
+                modules
+
+              echo "Done: $(ls -lh kernelsu.ko)"
+            '
+
+      # ── Verify .ko ──────────────────────────────────────────
+      - name: Verify vermagic
+        run: |
+          EXPECTED="5.15.189-android13-3-33470412 SMP preempt mod_unload modversions aarch64"
+          ACTUAL=$(modinfo ksu/kernel/kernelsu.ko | awk -F': +' '/^vermagic/{print $2}')
+          echo "Expected: ${EXPECTED}"
+          echo "Actual:   ${ACTUAL}"
+          [ "${ACTUAL}" = "${EXPECTED}" ] || { echo "VERMAGIC MISMATCH"; exit 1; }
+          echo "Vermagic OK"
+
+      - name: Verify __versions is empty
+        run: |
+          # Strip the variable-width [Nr] field first so awk indices are stable:
+          # After sed: $1=Name $2=Type $3=Address $4=Off $5=Size
+          HEX=$(readelf -SW ksu/kernel/kernelsu.ko \
+            | sed 's/\[ *[0-9]*\]//' \
+            | awk '$1 == "__versions" {print $5}')
+          SIZE=$((16#${HEX:-0}))
+          echo "__versions size: ${HEX:-000000} (${SIZE} bytes)"
+          [ "${SIZE}" -eq 0 ] || { echo "__versions not empty — CRC check will fail at load"; exit 1; }
+          echo "__versions empty — manual relocation OK"
+
+      # ── Strip + build ksud ───────────────────────────────────
+      - name: Strip debug symbols
+        run: |
+          NDK_STRIP="${HOME}/android-ndk-r29/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          "${NDK_STRIP}" -d ksu/kernel/kernelsu.ko
+          ls -lh ksu/kernel/kernelsu.ko
+
+      - name: Stage .ko and build ksud
+        run: |
+          mkdir -p ksu/userspace/ksud/bin/aarch64
+          cp ksu/kernel/kernelsu.ko \
+            ksu/userspace/ksud/bin/aarch64/android13-5.15_kernelsu.ko
+
+          NDK_BIN="${NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${NDK_BIN}/aarch64-linux-android35-clang"
+          export CC_aarch64_linux_android="${NDK_BIN}/aarch64-linux-android35-clang"
+          export AR_aarch64_linux_android="${NDK_BIN}/llvm-ar"
+
+          cd ksu/userspace/ksud
+          cargo build \
+            --release \
+            --target aarch64-linux-android \
+            -Z build-std=std,panic_abort
+
+          # Locate binary without assuming workspace root — handles both
+          # ksu/target/ (workspace) and ksu/userspace/ksud/target/ (standalone)
+          KSUD_BIN=$(find "${GITHUB_WORKSPACE}/ksu" \
+            -path "*/aarch64-linux-android/release/ksud" -type f | head -1)
+          if [ -z "${KSUD_BIN}" ]; then
+            echo "ERROR: ksud binary not found after cargo build"
+            find "${GITHUB_WORKSPACE}/ksu" -name "ksud" -type f 2>/dev/null || true
+            exit 1
+          fi
+          echo "Found ksud at: ${KSUD_BIN}"
+          cp "${KSUD_BIN}" "${GITHUB_WORKSPACE}/ksud-a54x-A546EXXSLFZG3-kdp"
+          ls -lh "${GITHUB_WORKSPACE}/ksud-a54x-A546EXXSLFZG3-kdp"
+
+      # ── Diagnostic: relocation + symbol check ───────────────
+      # This does NOT block the build — it's evidence for post-deploy debugging.
+      # If critical symbols (commit_creds, prepare_kernel_cred) appear in neither
+      # ELF relocations NOR the string table, the module will silent-fail or panic
+      # on first use. Investigate before flashing.
+      - name: Dump relocation and symbol diagnostics
+        run: |
+          echo "=== ELF Relocations (first 60 entries) ==="
+          readelf -r ksu/kernel/kernelsu.ko | head -60
+
+          echo ""
+          echo "=== Critical symbol names in string table ==="
+          strings ksu/kernel/kernelsu.ko | \
+            grep -E '^(commit_creds|prepare_kernel_cred|kallsyms_lookup_name|find_task_by_vpid|security_hook_heads|selinux_enforcing)$' | \
+            sort -u || echo "(none matched — verify manual relocation covers these)"
+
+          echo ""
+          echo "=== All section sizes ==="
+          readelf -SW ksu/kernel/kernelsu.ko \
+            | sed 's/\[ *[0-9]*\]//' \
+            | awk 'NF>=5 && $1!="" && $2!="NULL" && $2!="Type" {printf "%-32s off=%s size=%s\n", $1, $4, $5}'
+
+      # ── Output ──────────────────────────────────────────────
+      - name: Upload ksud
+        uses: actions/upload-artifact@v4
+        with:
+          name: ksud-a54x-A546EXXSLFZG3
+          path: ksud-a54x-A546EXXSLFZG3-kdp
+          retention-days: 14

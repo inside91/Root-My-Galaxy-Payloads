@@ -1,0 +1,272 @@
+name: Build Payload — SM-A546E (a54x-A546EXXSLFZG3)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PROFILE: a54x-A546EXXSLFZG3
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+
+      # ─────────────────────────────────────────────
+      # Checkout repository
+      # ─────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ─────────────────────────────────────────────
+      # Install Android NDK r29
+      # ─────────────────────────────────────────────
+      - name: Install Android NDK r29
+        run: |
+          curl -Lo ndk.zip \
+            https://dl.google.com/android/repository/android-ndk-r29-linux.zip
+
+          unzip -q ndk.zip -d "${HOME}"
+
+          echo "NDK_HOME=${HOME}/android-ndk-r29" >> "${GITHUB_ENV}"
+
+      # ─────────────────────────────────────────────
+      # Verify target files
+      # ─────────────────────────────────────────────
+      - name: Verify target files exist
+        run: |
+          for f in \
+            "src/targets/${PROFILE}/target.h" \
+            "src/targets/${PROFILE}/p0_fingerprint.h"; do
+
+            if [ ! -f "${f}" ]; then
+              echo "MISSING: ${f}"
+              exit 1
+            fi
+
+            echo "OK: ${f}"
+          done
+
+      # ─────────────────────────────────────────────
+      # Build payload
+      # ─────────────────────────────────────────────
+      - name: Build payload
+        run: |
+          make \
+            TARGET="${PROFILE}" \
+            ANDROID_NDK_HOME="${NDK_HOME}" \
+            -j"$(nproc)"
+
+      # ─────────────────────────────────────────────
+      # Verify build output
+      # ─────────────────────────────────────────────
+      - name: Verify build output
+        run: |
+          echo "=== Build output ==="
+
+          for f in \
+            "build/${PROFILE}/cve-2026-43499-app.so" \
+            "build/${PROFILE}/cve-2026-43499" \
+            "build/${PROFILE}/cve-2026-43499-root"; do
+
+            if [ ! -f "${f}" ]; then
+              echo "MISSING: ${f}"
+              exit 1
+            fi
+
+            if [ ! -s "${f}" ]; then
+              echo "EMPTY: ${f}"
+              exit 1
+            fi
+
+            ls -lh "${f}"
+            stat -c 'SIZE: %s bytes' "${f}"
+            echo
+          done
+
+      # ─────────────────────────────────────────────
+      # Replace repository .so
+      # ─────────────────────────────────────────────
+      - name: Replace repository payload
+        run: |
+          SRC="build/${PROFILE}/cve-2026-43499-app.so"
+          DST="artifacts/${PROFILE}/cve-2026-43499-app.so"
+
+          echo "=== Replacing repository .so ==="
+
+          mkdir -p "$(dirname "${DST}")"
+
+          cp -f "${SRC}" "${DST}"
+
+          echo
+          echo "=== Source file ==="
+          ls -lh "${SRC}"
+          stat -c 'Source size: %s bytes' "${SRC}"
+
+          echo
+          echo "=== Repository file ==="
+          ls -lh "${DST}"
+          stat -c 'Repository size: %s bytes' "${DST}"
+
+      # ─────────────────────────────────────────────
+      # Copy standalone binaries
+      # ─────────────────────────────────────────────
+      - name: Stage payload files
+        run: |
+          ARTIFACT_DIR="artifacts/${PROFILE}"
+
+          mkdir -p "${ARTIFACT_DIR}"
+
+          cp -f \
+            "build/${PROFILE}/cve-2026-43499" \
+            "${ARTIFACT_DIR}/"
+
+          cp -f \
+            "build/${PROFILE}/cve-2026-43499-root" \
+            "${ARTIFACT_DIR}/"
+
+          echo "=== Staged files ==="
+          ls -lah "${ARTIFACT_DIR}"
+
+      # ─────────────────────────────────────────────
+      # Calculate .so size
+      # ─────────────────────────────────────────────
+      - name: Calculate payload size
+        run: |
+          SO_FILE="artifacts/${PROFILE}/cve-2026-43499-app.so"
+
+          SO_SIZE=$(stat -c%s "${SO_FILE}")
+
+          echo "SO_SIZE=${SO_SIZE}" >> "${GITHUB_ENV}"
+
+          echo
+          echo "========================================"
+          echo " Payload size"
+          echo "========================================"
+          echo
+          echo "File : ${SO_FILE}"
+          echo "Bytes: ${SO_SIZE}"
+          echo
+          ls -lh "${SO_FILE}"
+          echo
+
+      # ─────────────────────────────────────────────
+      # Verify repository files
+      # ─────────────────────────────────────────────
+      - name: Verify staged payload
+        run: |
+          ARTIFACT_DIR="artifacts/${PROFILE}"
+
+          echo "=== Checking staged files ==="
+
+          for f in \
+            "${ARTIFACT_DIR}/cve-2026-43499-app.so" \
+            "${ARTIFACT_DIR}/cve-2026-43499" \
+            "${ARTIFACT_DIR}/cve-2026-43499-root"; do
+
+            if [ ! -f "${f}" ]; then
+              echo "MISSING: ${f}"
+              exit 1
+            fi
+
+            if [ ! -s "${f}" ]; then
+              echo "EMPTY: ${f}"
+              exit 1
+            fi
+
+            echo "OK: ${f}"
+            stat -c 'Size: %s bytes' "${f}"
+            echo
+          done
+
+      # ─────────────────────────────────────────────
+      # Show Git changes
+      # ─────────────────────────────────────────────
+      - name: Show Git changes
+        run: |
+          echo "=== Git status ==="
+          git status --short
+
+          echo
+          echo "=== Changed files ==="
+          git diff --stat
+
+      # ─────────────────────────────────────────────
+      # Commit updated .so
+      # ─────────────────────────────────────────────
+      - name: Commit updated .so
+        run: |
+          FILE="artifacts/${PROFILE}/cve-2026-43499-app.so"
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add "${FILE}"
+
+          if git diff --cached --quiet; then
+            echo "No changes detected."
+            echo "The generated .so is identical to the repository version."
+            exit 0
+          fi
+
+          echo "Changes detected."
+
+          git diff --cached --stat
+
+          git commit \
+            -m "build: update ${PROFILE} payload (${SO_SIZE} bytes)"
+
+          git push
+
+      # ─────────────────────────────────────────────
+      # Upload GitHub Actions artifact
+      # ─────────────────────────────────────────────
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: payload-${{ env.PROFILE }}
+          path: artifacts/${{ env.PROFILE }}/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6
+          overwrite: true
+
+      # ─────────────────────────────────────────────
+      # Generate targets-v3.json entry
+      # ─────────────────────────────────────────────
+      - name: Generate targets-v3.json entry
+        run: |
+          cat << EOF
+
+          ========================================
+          targets-v3.json entry
+          ========================================
+
+          {
+            "model": "SM-A546E",
+            "codename": "a54x",
+            "profile": "${PROFILE}",
+            "kernelRelease": "5.15.189-android13-3-33470412",
+            "kernelVersion": "5.15.189",
+            "kmi": "android13-5.15",
+            "buildFingerprint": "samsung/a54xnsxx/a54x:15/BP4A.251205.006/A546EXXSLFZG3:user/release-keys",
+            "exploit": {
+              "url": "artifacts/${PROFILE}/cve-2026-43499-app.so",
+              "size": ${SO_SIZE}
+            },
+            "ksud": "ksud-a54x-A546EXXSLFZG3-kdp",
+            "status": "static-analysis"
+          }
+
+          ========================================
+          .so size: ${SO_SIZE} bytes
+          ========================================
+
+          EOF
