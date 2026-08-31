@@ -1,0 +1,569 @@
+# .github/workflows/build-payload-a54.yml
+
+name: Build Payload — SM-A546E (a54x-A546EXXSLFZG3)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  PROFILE: a54x-A546EXXSLFZG3
+  ARTIFACT_DIR: ${{ github.workspace }}/artifacts/a54x-A546EXXSLFZG3
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+
+      # ─────────────────────────────────────────────
+      # Checkout repository
+      # ─────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ─────────────────────────────────────────────
+      # Install Android NDK r29
+      # ─────────────────────────────────────────────
+      - name: Install Android NDK r29
+        run: |
+          curl -Lo ndk.zip \
+            https://dl.google.com/android/repository/android-ndk-r29-linux.zip
+
+          unzip -q ndk.zip -d "${HOME}"
+
+          echo "NDK_HOME=${HOME}/android-ndk-r29" >> "${GITHUB_ENV}"
+
+          echo "=== NDK ==="
+          "${HOME}/android-ndk-r29/ndk-build" --version || true
+
+      # ─────────────────────────────────────────────
+      # Verify target files
+      # ─────────────────────────────────────────────
+      - name: Verify target files exist
+        run: |
+          echo "=== Checking target files ==="
+
+          for f in \
+            "src/targets/${PROFILE}/target.h" \
+            "src/targets/${PROFILE}/p0_fingerprint.h"; do
+
+            if [ ! -f "${f}" ]; then
+              echo "MISSING: ${f}"
+              exit 1
+            fi
+
+            echo "OK: ${f}"
+          done
+
+      # ─────────────────────────────────────────────
+      # Verify support manifest
+      # ─────────────────────────────────────────────
+      - name: Verify support manifest
+        run: |
+          JSON_FILE="support/targets-v3.json"
+
+          if [ ! -f "${JSON_FILE}" ]; then
+            echo "MISSING: ${JSON_FILE}"
+            exit 1
+          fi
+
+          echo "OK: ${JSON_FILE}"
+
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          json_file = "support/targets-v3.json"
+          profile = os.environ["PROFILE"]
+
+          try:
+              with open(json_file, "r", encoding="utf-8") as f:
+                  data = json.load(f)
+          except Exception as e:
+              print(f"ERROR: Invalid JSON: {e}")
+              sys.exit(1)
+
+          if not isinstance(data, dict):
+              print("ERROR: Root JSON object is invalid.")
+              sys.exit(1)
+
+          if "payloads" not in data:
+              print("ERROR: 'payloads' field missing.")
+              sys.exit(1)
+
+          found = False
+
+          for payload in data["payloads"]:
+              if payload.get("payloadId") == profile:
+                  found = True
+
+                  print(f"Found payloadId: {profile}")
+                  print(f"Current exploit size: {payload.get('exploit', {}).get('size')}")
+
+                  break
+
+          if not found:
+              print(f"ERROR: payloadId '{profile}' not found.")
+              sys.exit(1)
+
+          print("Manifest validation: OK")
+          PY
+
+      # ─────────────────────────────────────────────
+      # Build payload
+      # ─────────────────────────────────────────────
+      - name: Build payload
+        run: |
+          echo "=== Building payload ==="
+
+          make \
+            TARGET="${PROFILE}" \
+            ANDROID_NDK_HOME="${NDK_HOME}" \
+            -j"$(nproc)"
+
+      # ─────────────────────────────────────────────
+      # Verify build output
+      # ─────────────────────────────────────────────
+      - name: Verify build output
+        run: |
+          echo "=== Build output ==="
+
+          REQUIRED_SO="build/${PROFILE}/cve-2026-43499-app.so"
+
+          if [ ! -f "${REQUIRED_SO}" ]; then
+            echo "MISSING: ${REQUIRED_SO}"
+            exit 1
+          fi
+
+          if [ ! -s "${REQUIRED_SO}" ]; then
+            echo "EMPTY: ${REQUIRED_SO}"
+            exit 1
+          fi
+
+          echo "OK: ${REQUIRED_SO}"
+          ls -lh "${REQUIRED_SO}"
+          stat -c 'SIZE: %s bytes' "${REQUIRED_SO}"
+          echo
+
+          for f in \
+            "build/${PROFILE}/cve-2026-43499" \
+            "build/${PROFILE}/cve-2026-43499-root"; do
+
+            if [ -f "${f}" ]; then
+              if [ ! -s "${f}" ]; then
+                echo "EMPTY: ${f}"
+                exit 1
+              fi
+
+              echo "OK optional: ${f}"
+              ls -lh "${f}"
+              stat -c 'SIZE: %s bytes' "${f}"
+              echo
+            else
+              echo "SKIP optional: ${f}"
+            fi
+          done
+
+      # ─────────────────────────────────────────────
+      # Replace repository .so
+      # ─────────────────────────────────────────────
+      - name: Replace repository payload
+        run: |
+          SRC="build/${PROFILE}/cve-2026-43499-app.so"
+          DST="${ARTIFACT_DIR}/cve-2026-43499-app.so"
+
+          echo "=== Replacing repository .so ==="
+
+          mkdir -p "$(dirname "${DST}")"
+
+          cp -f "${SRC}" "${DST}"
+
+          echo
+          echo "=== Source file ==="
+          ls -lh "${SRC}"
+          stat -c 'Source size: %s bytes' "${SRC}"
+
+          echo
+          echo "=== Repository file ==="
+          ls -lh "${DST}"
+          stat -c 'Repository size: %s bytes' "${DST}"
+
+      # ─────────────────────────────────────────────
+      # Copy standalone binaries
+      # ─────────────────────────────────────────────
+      - name: Stage payload files
+        run: |
+          mkdir -p "${ARTIFACT_DIR}"
+
+          for f in \
+            "build/${PROFILE}/cve-2026-43499" \
+            "build/${PROFILE}/cve-2026-43499-root"; do
+
+            if [ -f "${f}" ]; then
+              cp -f "${f}" "${ARTIFACT_DIR}/"
+              echo "Staged optional: ${f}"
+            else
+              echo "SKIP optional: ${f}"
+            fi
+          done
+
+          echo "=== Staged files ==="
+          ls -lah "${ARTIFACT_DIR}"
+
+      # ─────────────────────────────────────────────
+      # Calculate .so size
+      # ─────────────────────────────────────────────
+      - name: Calculate payload size
+        run: |
+          SO_FILE="${ARTIFACT_DIR}/cve-2026-43499-app.so"
+
+          if [ ! -f "${SO_FILE}" ]; then
+            echo "ERROR: ${SO_FILE} does not exist."
+            exit 1
+          fi
+
+          SO_SIZE=$(stat -c%s "${SO_FILE}")
+
+          if [ "${SO_SIZE}" -le 0 ]; then
+            echo "ERROR: Invalid .so size: ${SO_SIZE}"
+            exit 1
+          fi
+
+          echo "SO_SIZE=${SO_SIZE}" >> "${GITHUB_ENV}"
+
+          echo
+          echo "========================================"
+          echo " Payload size"
+          echo "========================================"
+          echo
+          echo "File : ${SO_FILE}"
+          echo "Bytes: ${SO_SIZE}"
+          echo
+          ls -lh "${SO_FILE}"
+          echo
+
+      # ─────────────────────────────────────────────
+      # Update support/targets-v3.json
+      # ─────────────────────────────────────────────
+      - name: Update targets-v3.json payload size
+        run: |
+          JSON_FILE="support/targets-v3.json"
+
+          echo "========================================"
+          echo " Updating support manifest"
+          echo "========================================"
+          echo
+          echo "Profile : ${PROFILE}"
+          echo "SO size : ${SO_SIZE} bytes"
+          echo "JSON    : ${JSON_FILE}"
+          echo
+
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          json_file = "support/targets-v3.json"
+          profile = os.environ["PROFILE"]
+          so_size = int(os.environ["SO_SIZE"])
+
+          # Read JSON
+          try:
+              with open(json_file, "r", encoding="utf-8") as f:
+                  data = json.load(f)
+          except Exception as e:
+              print(f"ERROR: Failed to read JSON: {e}")
+              sys.exit(1)
+
+          found = False
+
+          # Find payload
+          for payload in data.get("payloads", []):
+
+              if payload.get("payloadId") != profile:
+                  continue
+
+              found = True
+
+              if "exploit" not in payload:
+                  print(f"ERROR: 'exploit' object missing for {profile}")
+                  sys.exit(1)
+
+              old_size = payload["exploit"].get("size")
+
+              # Update size
+              payload["exploit"]["size"] = so_size
+
+              print("Payload found:")
+              print(f"  payloadId : {profile}")
+              print(f"  old size  : {old_size}")
+              print(f"  new size  : {so_size}")
+
+              break
+
+          if not found:
+              print(f"ERROR: payloadId '{profile}' not found in {json_file}")
+              sys.exit(1)
+
+          # Write JSON
+          try:
+              with open(json_file, "w", encoding="utf-8") as f:
+                  json.dump(
+                      data,
+                      f,
+                      indent=2,
+                      ensure_ascii=False
+                  )
+                  f.write("\n")
+          except Exception as e:
+              print(f"ERROR: Failed to write JSON: {e}")
+              sys.exit(1)
+
+          print()
+          print("SUCCESS: targets-v3.json updated.")
+          PY
+
+      # ─────────────────────────────────────────────
+      # Verify JSON update
+      # ─────────────────────────────────────────────
+      - name: Verify targets-v3.json update
+        run: |
+          JSON_FILE="support/targets-v3.json"
+
+          echo "========================================"
+          echo " Verifying manifest"
+          echo "========================================"
+          echo
+
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          json_file = "support/targets-v3.json"
+          profile = os.environ["PROFILE"]
+          expected_size = int(os.environ["SO_SIZE"])
+
+          with open(json_file, "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          found = False
+
+          for payload in data.get("payloads", []):
+
+              if payload.get("payloadId") != profile:
+                  continue
+
+              found = True
+
+              actual_size = payload.get("exploit", {}).get("size")
+
+              print(f"Profile       : {profile}")
+              print(f"Expected size : {expected_size}")
+              print(f"Manifest size : {actual_size}")
+              print()
+
+              if actual_size != expected_size:
+                  print("ERROR: Manifest size does not match .so size!")
+                  sys.exit(1)
+
+              print("SUCCESS: Size matches.")
+
+              break
+
+          if not found:
+              print(f"ERROR: payloadId '{profile}' not found.")
+              sys.exit(1)
+          PY
+
+          echo
+          echo "=== A54 manifest entry ==="
+
+          python3 - <<'PY'
+          import json
+
+          with open("support/targets-v3.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          for payload in data["payloads"]:
+              if payload.get("payloadId") == "a54x-A546EXXSLFZG3":
+                  print(json.dumps(payload, indent=2))
+                  break
+          PY
+
+      # ─────────────────────────────────────────────
+      # Verify staged payload
+      # ─────────────────────────────────────────────
+      - name: Verify staged payload
+        run: |
+          REQUIRED_SO="${ARTIFACT_DIR}/cve-2026-43499-app.so"
+
+          echo "========================================"
+          echo " Checking staged files"
+          echo "========================================"
+          echo
+
+          if [ ! -f "${REQUIRED_SO}" ]; then
+            echo "MISSING: ${REQUIRED_SO}"
+            exit 1
+          fi
+
+          if [ ! -s "${REQUIRED_SO}" ]; then
+            echo "EMPTY: ${REQUIRED_SO}"
+            exit 1
+          fi
+
+          echo "OK: ${REQUIRED_SO}"
+          stat -c 'Size: %s bytes' "${REQUIRED_SO}"
+          echo
+
+          for f in \
+            "${ARTIFACT_DIR}/cve-2026-43499" \
+            "${ARTIFACT_DIR}/cve-2026-43499-root"; do
+
+            if [ -f "${f}" ]; then
+              if [ ! -s "${f}" ]; then
+                echo "EMPTY: ${f}"
+                exit 1
+              fi
+
+              echo "OK optional: ${f}"
+              stat -c 'Size: %s bytes' "${f}"
+              echo
+            else
+              echo "SKIP optional: ${f}"
+            fi
+          done
+
+      # ─────────────────────────────────────────────
+      # Show Git changes
+      # ─────────────────────────────────────────────
+      - name: Show Git changes
+        run: |
+          echo "========================================"
+          echo " Git status"
+          echo "========================================"
+          echo
+
+          git status --short
+
+          echo
+          echo "========================================"
+          echo " Git diff stat"
+          echo "========================================"
+          echo
+
+          git diff --stat
+
+          echo
+          echo "========================================"
+          echo " Manifest diff"
+          echo "========================================"
+          echo
+
+          git diff -- support/targets-v3.json
+
+      # ─────────────────────────────────────────────
+      # Commit updated .so + manifest
+      # ─────────────────────────────────────────────
+      - name: Commit updated payload and manifest
+        run: |
+          SO_FILE="${ARTIFACT_DIR}/cve-2026-43499-app.so"
+          JSON_FILE="support/targets-v3.json"
+
+          git config user.name "inside91"
+          git config user.email \
+            "ferdian91@live.com"
+
+          echo "========================================"
+          echo " Preparing Git commit"
+          echo "========================================"
+          echo
+
+          git add \
+            "artifacts/${PROFILE}/cve-2026-43499-app.so" \
+            "${JSON_FILE}"
+
+          echo "=== Staged changes ==="
+          git status --short
+
+          echo
+          git diff --cached --stat
+
+          if git diff --cached --quiet; then
+            echo
+            echo "No changes detected."
+            echo "Generated files are identical to repository."
+            exit 0
+          fi
+
+          echo
+          echo "Creating commit..."
+
+          git commit \
+            -m "build: update ${PROFILE} payload (${SO_SIZE} bytes)"
+
+          echo
+          echo "Pushing changes..."
+
+          git push
+
+      # ─────────────────────────────────────────────
+      # Upload GitHub Actions artifact
+      # ─────────────────────────────────────────────
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: payload-${{ env.PROFILE }}
+          path: ${{ env.ARTIFACT_DIR }}/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 6
+          overwrite: true
+
+      # ─────────────────────────────────────────────
+      # Final summary
+      # ─────────────────────────────────────────────
+      - name: Final summary
+        run: |
+          SO_FILE="${ARTIFACT_DIR}/cve-2026-43499-app.so"
+
+          echo
+          echo "========================================"
+          echo " BUILD COMPLETE"
+          echo "========================================"
+          echo
+          echo "Profile:"
+          echo "  ${PROFILE}"
+          echo
+          echo "Payload:"
+          echo "  ${SO_FILE}"
+          echo
+          echo "Payload size:"
+          echo "  ${SO_SIZE} bytes"
+          echo
+          echo "Manifest:"
+          echo "  support/targets-v3.json"
+          echo
+          echo "Manifest exploit.size:"
+          python3 - <<'PY'
+          import json
+
+          with open("support/targets-v3.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          for payload in data["payloads"]:
+              if payload.get("payloadId") == "a54x-A546EXXSLFZG3":
+                  print(payload["exploit"]["size"])
+                  break
+          PY
+
+          echo
+          echo "========================================"
