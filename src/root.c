@@ -283,6 +283,8 @@ static int install_workqueue_umh_root(int fd) {
     pr_error("root umh bad selinux old=%u\n", selinux_old);
     return 0;
   }
+  pr_info("root umh exec path=%s arg=%s uid=%s\n",
+          umh_data.path, umh_data.arg, umh_data.uid);
   pr_info("root umh spans work=%016zx-%016zx data=%016zx-%016zx selinux=%016zx old=%u\n",
           fake_work_addr, fake_work_end, umh_data_addr, umh_data_end,
           selinux_addr, selinux_old);

