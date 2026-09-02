@@ -1,0 +1,155 @@
+name: Build A546E ksud
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_release:
+        description: Kernel release string for vermagic
+        required: true
+        default: 5.15.189-android13-3-33470412
+      ddk_image:
+        description: DDK image
+        required: true
+        default: ghcr.io/ylarod/ddk-min:android13-5.15-20260828
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout payload repo
+        uses: actions/checkout@v4
+
+      - name: Validate required A546E files
+        run: |
+          test -f device/a546e/A546EXXSLFZG3/vmlinux.elf
+          test -f device/a546e/A546EXXSLFZG3/kernel.config
+          file device/a546e/A546EXXSLFZG3/vmlinux.elf
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang curl git jq libclang-dev llvm rustup
+          rustup target add aarch64-linux-android
+
+      - name: Install Android NDK r27c
+        run: |
+          mkdir -p "$HOME/android-sdk/cmdline-tools"
+          curl -fsSL -o /tmp/cmdline-tools.zip \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q /tmp/cmdline-tools.zip -d "$HOME/android-sdk/cmdline-tools"
+          mv "$HOME/android-sdk/cmdline-tools/cmdline-tools" "$HOME/android-sdk/cmdline-tools/latest"
+          yes | "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$HOME/android-sdk" \
+            "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$HOME/android-sdk/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Clone and patch KernelSU
+        run: |
+          git clone https://github.com/tiann/KernelSU.git KernelSU
+          cd KernelSU
+          git checkout v3.2.5
+          git apply ../kernelsu/patches/KernelSU-v3.2.5-samsung-kdp-rkp-defex.patch
+
+      - name: Fix Samsung KDP ucounts type for android13-5.15
+        run: |
+          sed -i 's/enum rlimit_type/enum ucount_type/g' \
+            KernelSU/kernel/compat/samsung_kdp.c
+
+          if grep -n "enum rlimit_type" KernelSU/kernel/compat/samsung_kdp.c; then
+            echo "Unexpected enum rlimit_type remains in samsung_kdp.c"
+            exit 1
+          fi
+
+          grep -n "ucount_type" KernelSU/kernel/compat/samsung_kdp.c
+
+      - name: Build kernelsu.ko with DDK
+        env:
+          KERNEL_RELEASE: ${{ inputs.kernel_release }}
+          DDK_IMAGE: ${{ inputs.ddk_image }}
+        run: |
+          docker run --rm \
+            -e KERNEL_RELEASE="$KERNEL_RELEASE" \
+            -v "$PWD/KernelSU:/workspace/KernelSU" \
+            -w /workspace/KernelSU/kernel \
+            "$DDK_IMAGE" \
+            bash -lc '
+              set -eux
+
+              if [ -f "$KDIR/include/config/kernel.release" ]; then
+                OLD_RELEASE="$(cat "$KDIR/include/config/kernel.release")"
+                sed -i "s/${OLD_RELEASE}/${KERNEL_RELEASE}/g" \
+                  "$KDIR/include/config/kernel.release" \
+                  "$KDIR/include/generated/utsrelease.h"
+              fi
+
+              make clean || true
+
+              CONFIG_KSU=m \
+              CONFIG_KSU_SAMSUNG_KDP=y \
+              CONFIG_KSU_SAMSUNG_RKP=y \
+              CONFIG_KSU_SAMSUNG_DEFEX=y \
+              CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y \
+              CC=clang \
+              make -j"$(nproc)"
+
+              modinfo ./kernelsu.ko | tee /tmp/modinfo.txt
+              ACTUAL_RELEASE="$(modinfo -F vermagic ./kernelsu.ko | awk "{print \$1}")"
+              test "$ACTUAL_RELEASE" = "$KERNEL_RELEASE"
+            '
+
+      - name: Audit kernelsu.ko against A546E vmlinux
+        run: |
+          if [ -x KernelSU/kernel/check_symbol ]; then
+            KernelSU/kernel/check_symbol \
+              KernelSU/kernel/kernelsu.ko \
+              device/a546e/A546EXXSLFZG3/vmlinux.elf
+          else
+            clang KernelSU/kernel/tools/check_symbol.c -o /tmp/check_symbol
+            /tmp/check_symbol \
+              KernelSU/kernel/kernelsu.ko \
+              device/a546e/A546EXXSLFZG3/vmlinux.elf
+          fi
+
+      - name: Strip module and embed into ksud
+        run: |
+          llvm-strip -d KernelSU/kernel/kernelsu.ko
+          mkdir -p KernelSU/userspace/ksud/bin/aarch64
+          cp KernelSU/kernel/kernelsu.ko \
+            KernelSU/userspace/ksud/bin/aarch64/android13-5.15_kernelsu.ko
+
+      - name: Build ksud
+        working-directory: KernelSU
+        env:
+          NDK_API: "35"
+        run: |
+          NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "$NDK_BIN" >> "$GITHUB_PATH"
+
+          HOST_LIBCLANG_PATH="$(llvm-config --libdir || true)"
+          if ! ls "$HOST_LIBCLANG_PATH"/libclang.so* >/dev/null 2>&1; then
+            HOST_LIBCLANG="$(find /usr -name 'libclang.so*' -type f 2>/dev/null | head -n1)"
+            HOST_LIBCLANG_PATH="$(dirname "$HOST_LIBCLANG")"
+          fi
+          ls "$HOST_LIBCLANG_PATH"/libclang.so*
+          export LIBCLANG_PATH="$HOST_LIBCLANG_PATH"
+
+          NDK_SYSROOT="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-linux-android --sysroot=$NDK_SYSROOT -isystem $NDK_SYSROOT/usr/include -isystem $NDK_SYSROOT/usr/include/aarch64-linux-android -D__ANDROID_API__=${NDK_API}"
+          export BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android="$BINDGEN_EXTRA_CLANG_ARGS"
+
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_BIN/aarch64-linux-android${NDK_API}-clang"
+          export CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android${NDK_API}-clang"
+          export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
+
+          cargo build --release --target aarch64-linux-android -p ksud
+          cp target/aarch64-linux-android/release/ksud ../ksud-A546EXXSLFZG3-kdp
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: A546EXXSLFZG3-ksud
+          if-no-files-found: error
+          path: |
+            ksud-A546EXXSLFZG3-kdp
+            KernelSU/kernel/kernelsu.ko
+            KernelSU/userspace/ksud/bin/aarch64/android13-5.15_kernelsu.ko

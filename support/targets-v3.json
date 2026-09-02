@@ -41,11 +41,11 @@
         "6.6.98"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/pa3q-S938NKSUACZF1/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/pa3q-S938NKSUACZF1/cve-2026-43499-app.so",
         "size": 104128
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-s25u-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-s25u-kdp",
         "size": 6407096
       }
     },
@@ -59,11 +59,11 @@
         "6.6.98"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/psq-S9370ZCS9CZG1/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/psq-S9370ZCS9CZG1/cve-2026-43499-app.so",
         "size": 125264
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-s25u-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-s25u-kdp",
         "size": 6407096
       }
     },
@@ -78,11 +78,11 @@
         "6.6.98"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/q7q-F966USQU9BZDN/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/q7q-F966USQU9BZDN/cve-2026-43499-app.so",
         "size": 111216
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-s25u-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-s25u-kdp",
         "size": 6407096
       }
     },
@@ -96,11 +96,11 @@
         "6.1.145"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/e3q-S928USQS6DZF2/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/e3q-S928USQS6DZF2/cve-2026-43499-app.so",
         "size": 104128
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-e3q-S928USQS6DZF2-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-e3q-S928USQS6DZF2-kdp",
         "size": 4726416
       }
     },
@@ -115,11 +115,11 @@
       ],
       "requiresFreshP0Session": true,
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/e2s-S926BXXUEDZDR/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/e2s-S926BXXUEDZDR/cve-2026-43499-app.so",
         "size": 104128
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-e2s-S926BXXUEDZDR-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-e2s-S926BXXUEDZDR-kdp",
         "size": 4780056
       }
     },
@@ -134,11 +134,11 @@
       ],
       "requiresFreshP0Session": true,
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/e1s-S921BXXSFDZE1/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/e1s-S921BXXSFDZE1/cve-2026-43499-app.so",
         "size": 104128
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-e1s-S921BXXSFDZE1-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-e1s-S921BXXSFDZE1-kdp",
         "size": 4920520
       }
     },
@@ -157,11 +157,11 @@
         "6.6.102"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/essi-A566EXXSCCZG6/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/essi-A566EXXSCCZG6/cve-2026-43499-app.so",
         "size": 104128
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-A566EXXSCCZG6-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-A566EXXSCCZG6-kdp",
         "size": 4765336
       }
     },
@@ -175,11 +175,11 @@
         "6.6.46"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/a36xq-A366WVLS3AYG1/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/a36xq-A366WVLS3AYG1/cve-2026-43499-app.so",
         "size": 128688
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-A366WVLS3AYG1-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-A366WVLS3AYG1-kdp",
         "size": 4889120
       }
     },
@@ -199,11 +199,11 @@
         "5.15.189"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/dm3q-S9180ZHS8FZF5/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/dm3q-S9180ZHS8FZF5/cve-2026-43499-app.so",
         "size": 137728
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-dm3q-S9180ZHS8FZF5-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-dm3q-S9180ZHS8FZF5-kdp",
         "size": 4556352
       }
     },
@@ -218,11 +218,11 @@
       ],
       "requiresFreshP0Session": true,
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/e1s-S921NKSSFDZF3/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/e1s-S921NKSSFDZF3/cve-2026-43499-app.so",
         "size": 104128
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-e1s-S921NKSSFDZF3-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-e1s-S921NKSSFDZF3-kdp",
         "size": 4758872
       }
     },
@@ -236,15 +236,15 @@
         "5.15.189"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/a54x-A546EXXSKFZF4/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/a54x-A546EXXSKFZF4/cve-2026-43499-app.so",
         "size": 104128
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
         "size": 3950480
       },
       "kernelsu-next": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
         "size": 4083520
       }
     },
@@ -258,15 +258,15 @@
         "5.15.189"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/a54x-A546EXXSLFZG3/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/a54x-A546EXXSLFZG3/cve-2026-43499-app.so",
         "size": 134208
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
         "size": 3950480
       },
       "kernelsu-next": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
         "size": 4083520
       }
     },
@@ -280,15 +280,15 @@
         "5.15.189"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/a54x-A546BXXSLFZG3/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/a54x-A546BXXSLFZG3/cve-2026-43499-app.so",
         "size": 104128
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
         "size": 3950480
       },
       "kernelsu-next": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
         "size": 4083520
       }
     },
@@ -302,15 +302,15 @@
         "5.15.189"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/m54xxx-M546BXXUCFZE5/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/m54xxx-M546BXXUCFZE5/cve-2026-43499-app.so",
         "size": 104128
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
         "size": 3950480
       },
       "kernelsu-next": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
         "size": 4083520
       }
     },
@@ -324,15 +324,15 @@
         "5.15.189"
       ],
       "exploit": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/a26x-A266BXXSBCZG2/cve-2026-43499-app.so",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/a26x-A266BXXSBCZG2/cve-2026-43499-app.so",
         "size": 104128
       },
       "kernelsu": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
         "size": 3950480
       },
       "kernelsu-next": {
-        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
+        "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
         "size": 4083520
       }
     }
