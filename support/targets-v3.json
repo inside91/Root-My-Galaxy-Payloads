@@ -179,6 +179,24 @@
       }
     },
     {
+      "payloadId": "a54x-A546EXXSLFZG3",
+      "displayName": "Galaxy A54 5G (L) | Kernel 5.15.189",
+      "models": ["SM-A546E"],
+      "kernelVersions": ["5.15.189"],
+      "exploit": {
+        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/artifacts/a54x-A546EXXSLFZG3/cve-2026-43499-app.so",
+        "size": 134208
+      },
+      "kernelsu": {
+        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
+        "size": 3950480
+      },
+      "kernelsu-next": {
+        "url": "https://raw.githubusercontent.com/zainarbani/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-next-a54x-A546EXXSKFZF4-kdp",
+        "size": 4083520
+      }
+    },
+    {
       "payloadId": "a54x-A546EXXSKFZF4",
       "displayName": "Galaxy A54 | Kernel 5.15.189",
       "models": ["SM-A546E"],
