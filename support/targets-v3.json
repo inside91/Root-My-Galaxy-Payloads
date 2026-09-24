@@ -185,7 +185,7 @@
       "kernelVersions": ["5.15.189"],
       "exploit": {
         "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/artifacts/a54x-A546EXXSLFZG3/cve-2026-43499-app.so",
-        "size": 133712
+        "size": 133696
       },
       "kernelsu": {
         "url": "https://raw.githubusercontent.com/inside91/Root-My-Galaxy-Payloads/a54x-test/kernelsu/ksud-a54x-A546EXXSKFZF4-kdp",
