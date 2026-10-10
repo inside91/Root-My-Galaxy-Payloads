@@ -28,6 +28,7 @@
 #define HOLD_READY_SOCKET "cve43499_roothold"
 #define SH_PATH "/system/bin/sh"
 #define KSU_LOADER_PATH "/data/local/tmp/ksud-s25u-kdp"
+#define KSU_STAGE_PATH "/data/local/tmp/.ksud-stage"
 #define LOGCAT_PATH "/system/bin/logcat"
 
 static uid_t allowed_client_uid = 2000;
@@ -489,7 +490,16 @@ static int run_kernelsu_late_load(struct su_request *request, int conn) {
     if (loader_status != 0) {
       _exit(loader_status);
     }
-    _exit(verify_kernelsu_control());
+    int verify_status = verify_kernelsu_control();
+    if (verify_status == 0) {
+      /* KernelSU is live and owns /data/adb/ksud.  The staged copies in
+       * /data/local/tmp are pure temp-root residue from here on: integrity and
+       * banking scanners flag them by name, so drop them as soon as the
+       * control channel has been confirmed. */
+      unlink(KSU_LOADER_PATH);
+      unlink(KSU_STAGE_PATH);
+    }
+    _exit(verify_status);
   }
   close_request_fds(request);
   return wait_status(pid);

