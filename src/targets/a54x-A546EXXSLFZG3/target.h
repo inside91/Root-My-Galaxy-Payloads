@@ -25,12 +25,30 @@
  * ------------------------------------------------------------------------- */
 #define SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS 2
 #define FOPS_KERNEL_PAGE_SETUP_ATTEMPTS 12
-#define FOPS_FRESH_PAGE_ATTEMPTS 5
+/*
+ * In-process retry counts for the p0 gate and the fops slide.
+ *
+ * These were 5 and 4.  Each attempt performs up to four rt_mutex writes
+ * (gate + probe + two restore slots) against a freshly reclaimed kernel page,
+ * so the old values allowed up to ~9 write bursts per supervisor attempt.  A
+ * write that lands on the wrong page corrupts buddy-allocator metadata, and
+ * that corruption is permanent for the boot (list_del corruption in
+ * move_freepages_block -> Oops -> watchdog reboot, later, in any process).
+ * Multiplying the attempts multiplied the exposure.
+ *
+ * main.c / slide_app.c now only publish writer_started once a write window
+ * actually opened, so a genuine clean miss can be retried safely without
+ * burning the single cross-process retry.  Two in-process attempts keeps that
+ * benefit while halving the number of writes.  Raise only together with a
+ * per-page validation that proves the reclaimed page is the intended payload
+ * page before writing into it.
+ */
+#define FOPS_FRESH_PAGE_ATTEMPTS 2
 /* Retry the P0 KASLR gate in-process before falling back to the supervisor's
  * full cross-process attempt.  Each retry re-prepares a fresh payload page and
  * a fresh pipe oracle, so a reclaim miss (hits=0 changed=0) no longer costs a
  * ~25s process restart. */
-#define SLIDE_FRESH_PAGE_ATTEMPTS 4
+#define SLIDE_FRESH_PAGE_ATTEMPTS 2
 #define FOPS_ROUTE_COARSE_DELAY_USEC 50000
 #define FOPS_ROUTE_FINE_DELAY_TICKS \
   0ULL, 0x10ULL, 0x20ULL, 0x30ULL, 0x40ULL, 0x60ULL, 0x80ULL, 0x18ULL

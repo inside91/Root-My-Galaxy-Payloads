@@ -544,8 +544,22 @@ static int app_trigger_fops_slide_slot(size_t slot) {
           "lock=%016zx delay=%d fine_ticks=%llu\n",
           slot, slide_oracle_parent, slide_oracle_target, fake_lock, delay,
           (unsigned long long)slide_route_fine_delay_ticks);
-  app_publish_writer_started();
-  return slide_trigger_physical_state();
+  /*
+   * Publish writer_started only after the write window actually opened.
+   * The old order set the flag before slide_trigger_physical_state(), so a
+   * clean miss (requeue never reached EDEADLK, no byte written) still marked
+   * this boot as "stack writer ran" and preload.c refused every further
+   * attempt with "refusing retry on this boot".  The run then reported
+   * failure with the kernel untouched but the supervisor out of retries,
+   * which is what forced a reboot per attempt.  slide_trigger_physical_state()
+   * returns 1 only when the requeue-PI write window opened and the waiter and
+   * stack-window checks passed, so it is the right gate.
+   */
+  int landed = slide_trigger_physical_state();
+  if (landed) {
+    app_publish_writer_started();
+  }
+  return landed;
 }
 
 int app_trigger_fops_slide_route(void) {
@@ -614,8 +628,14 @@ int app_trigger_fops_slide_route(void) {
           "configured_delay=%d fine_ticks=%llu\n",
           slide_oracle_parent, slide_oracle_target, fake_lock, delay,
           (unsigned long long)slide_route_fine_delay_ticks);
-  app_publish_writer_started();
-  return slide_trigger_physical_state();
+  /* Same ordering fix as the fresh-session route above: the flag must only be
+   * published once the write window really opened, otherwise a clean miss
+   * burns the single cross-process retry the supervisor allows. */
+  int landed = slide_trigger_physical_state();
+  if (landed) {
+    app_publish_writer_started();
+  }
+  return landed;
 }
 #endif
 

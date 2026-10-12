@@ -622,31 +622,30 @@ ssize_t configfs_write_once(int fd, uintptr_t target, const void *data, size_t l
     return -1;
   }
   uintptr_t end = (uintptr_t)pos + len;
-  uint32_t buffer_size = 0;
-
-  if (end > max_write_window ||
-      !((base >> 24) & 0xff) || !((base >> 32) & 0xff) ||
-      !((base >> 40) & 0xff) || !((base >> 48) & 0xff) ||
-      !((base >> 56) & 0xff)) {
+  /*
+   * bin_buffer_size must cover exactly the bytes we are about to pwrite.
+   * The previous version walked candidate_size upward until the low three
+   * bytes were all non-zero, which made bin_buffer_size up to 0x200 bytes
+   * larger than the write.  configfs_bin_write_iter bounds the copy by
+   * bin_buffer_size, not by the pwrite length, so the surplus was written
+   * past the end of the object we aimed at.  If the target sat next to
+   * buddy-allocator metadata that surplus landed in `struct page` and the
+   * free list was corrupted (list_del corruption -> Oops -> panic minutes
+   * later, in an unrelated process).  Only accept a size that covers the
+   * write without extending it; refuse the write otherwise.
+   */
+  if (end > max_write_window || end > UINT32_MAX) {
     errno = ERANGE;
     return -1;
   }
-  for (uintptr_t candidate_size = end;
-       candidate_size <= max_write_window && candidate_size - end < 0x200;
-       candidate_size++) {
-    int usable = 1;
-    for (size_t i = 0; i < 3; i++) {
-      if (!((candidate_size >> (i * 8)) & 0xff)) {
-        usable = 0;
-        break;
-      }
-    }
-    if (usable) {
-      buffer_size = (uint32_t)candidate_size;
-      break;
-    }
+  uint32_t buffer_size = (uint32_t)end;
+  if (!((buffer_size >> 8) & 0xff) || !((buffer_size >> 16) & 0xff)) {
+    errno = ERANGE;
+    return -1;
   }
-  if (!buffer_size) {
+  if (!((base >> 24) & 0xff) || !((base >> 32) & 0xff) ||
+      !((base >> 40) & 0xff) || !((base >> 48) & 0xff) ||
+      !((base >> 56) & 0xff)) {
     errno = ERANGE;
     return -1;
   }
