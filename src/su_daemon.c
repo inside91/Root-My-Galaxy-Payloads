@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <dlfcn.h>
+#include <dirent.h>
 #include <limits.h>
 #include <poll.h>
 #include <sched.h>
@@ -445,6 +446,79 @@ static int verify_kernelsu_control(void) {
   return 0;
 }
 
+/*
+ * Names that mark temp-root staging residue in /data/local/tmp.
+ *
+ * Matching by pattern rather than by an exact list, because the residue varies
+ * with build and route, while the prefixes are stable across all of them.
+ */
+static int is_tmp_residue(const char *name) {
+  static const char *const prefixes[] = {
+      "ksud", ".ksud", "ksu-", "temp_su", "frida", "cve-2026-43499", NULL,
+  };
+  for (size_t i = 0; prefixes[i] != NULL; ++i) {
+    size_t len = strlen(prefixes[i]);
+    if (strncmp(name, prefixes[i], len) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void purge_tmp_residue(void) {
+  /*
+   * Remove the exploit staging residue from /data/local/tmp.
+   *
+   * This runs inside the daemon, whose domain is u:r:kernel:s0 with uid 0, so
+   * it can act on shell_data_file entries that the app itself cannot touch.
+   * That matters: the app tried to run the same cleanup through `helper -c`,
+   * and it always failed with rc=127.  rc=127 is not "command not found" here
+   * -- client_main() returns 127 when connect_daemon() fails, and connect()
+   * on this socket is refused by SELinux:
+   *
+   *   avc: denied { write } for comm="cve-2026-43499-"
+   *     name="temp_su.sock" scontext=u:r:runas_app:s0
+   *     tcontext=u:object_r:shell_data_file:s0 tclass=sock_file permissive=0
+   *
+   * /data/local/tmp is labelled shell_data_file, so no app-domain process can
+   * ever reach this socket.  Cleanup therefore has to happen on this side.
+   *
+   * Only residue names are removed, not the whole directory.  /data/local/tmp
+   * is shared scratch space: other apps keep real working files there (this
+   * device had a broker app's database and screenshots sitting next to the
+   * staging files).  A blanket wipe would destroy unrelated application data
+   * as a side effect of installing root, so the filter stays.
+   */
+  static const char *const residue_dirs[] = {"/data/local/tmp", NULL};
+  for (size_t d = 0; residue_dirs[d] != NULL; ++d) {
+    DIR *dir = opendir(residue_dirs[d]);
+    if (dir == NULL) {
+      continue;
+    }
+    char path[PATH_MAX];
+    struct dirent *entry = NULL;
+    while ((entry = readdir(dir)) != NULL) {
+      if (strcmp(entry->d_name, ".") == 0 ||
+          strcmp(entry->d_name, "..") == 0) {
+        continue;
+      }
+      if (!is_tmp_residue(entry->d_name)) {
+        continue;
+      }
+      int written = snprintf(path, sizeof(path), "%s/%s", residue_dirs[d],
+                             entry->d_name);
+      if (written <= 0 || (size_t)written >= sizeof(path)) {
+        continue;
+      }
+      if (unlink(path) != 0) {
+        dprintf(STDERR_FILENO, "tmp purge: unlink %s: %s\n", path,
+                strerror(errno));
+      }
+    }
+    closedir(dir);
+  }
+}
+
 static int run_kernelsu_late_load(struct su_request *request, int conn) {
   pid_t pid = fork();
   if (pid < 0) {
@@ -492,12 +566,7 @@ static int run_kernelsu_late_load(struct su_request *request, int conn) {
     }
     int verify_status = verify_kernelsu_control();
     if (verify_status == 0) {
-      /* KernelSU is live and owns /data/adb/ksud.  The staged copies in
-       * /data/local/tmp are pure temp-root residue from here on: integrity and
-       * banking scanners flag them by name, so drop them as soon as the
-       * control channel has been confirmed. */
-      unlink(KSU_LOADER_PATH);
-      unlink(KSU_STAGE_PATH);
+      purge_tmp_residue();
     }
     _exit(verify_status);
   }
