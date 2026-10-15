@@ -451,6 +451,11 @@ static int verify_kernelsu_control(void) {
  *
  * Matching by pattern rather than by an exact list, because the residue varies
  * with build and route, while the prefixes are stable across all of them.
+ *
+ * BOOTSTRAP_SOCK_PATH is excluded by the caller, not here: it matches the
+ * "temp_su" prefix but is the listening socket of the daemon running this
+ * purge, so removing it would make every later `helper -c` fail with rc=127
+ * until the next boot.
  */
 static int is_tmp_residue(const char *name) {
   static const char *const prefixes[] = {
@@ -508,6 +513,16 @@ static void purge_tmp_residue(void) {
       int written = snprintf(path, sizeof(path), "%s/%s", residue_dirs[d],
                              entry->d_name);
       if (written <= 0 || (size_t)written >= sizeof(path)) {
+        continue;
+      }
+      /*
+       * Never unlink the daemon's own listening socket.  It matches the
+       * residue prefixes, but it is live infrastructure: the app reaches root
+       * through it, so removing it would break every later `helper -c` with
+       * rc=127 until the next boot.  Compare the resolved path, not the bare
+       * name, so a socket in another directory is still treated as residue.
+       */
+      if (strcmp(path, BOOTSTRAP_SOCK_PATH) == 0) {
         continue;
       }
       if (unlink(path) != 0) {
