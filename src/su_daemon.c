@@ -470,7 +470,7 @@ static int is_tmp_residue(const char *name) {
   return 0;
 }
 
-static void purge_tmp_residue(int logfd) {
+static void purge_tmp_residue(void) {
   /*
    * Remove the exploit staging residue from /data/local/tmp.
    *
@@ -495,29 +495,12 @@ static void purge_tmp_residue(int logfd) {
    * as a side effect of installing root, so the filter stays.
    */
   static const char *const residue_dirs[] = {"/data/local/tmp", NULL};
-  int removed = 0;
-  int failed = 0;
-
   for (size_t d = 0; residue_dirs[d] != NULL; ++d) {
     DIR *dir = opendir(residue_dirs[d]);
     if (dir == NULL) {
-      if (logfd >= 0) {
-        dprintf(logfd, "tmp purge: opendir %s: %s\n", residue_dirs[d],
-                strerror(errno));
-      }
       continue;
     }
-
-    /*
-     * Collect first, unlink afterwards.
-     *
-     * Unlinking while the directory stream is still open lets readdir skip the
-     * entry that slides into the freed slot.  That is exactly how one residue
-     * file can survive while its neighbour is removed, with no error reported
-     * anywhere: the surviving name is never even offered to unlink().
-     */
-    static char names[64][256];
-    int count = 0;
+    char path[PATH_MAX];
     struct dirent *entry = NULL;
     while ((entry = readdir(dir)) != NULL) {
       if (strcmp(entry->d_name, ".") == 0 ||
@@ -527,21 +510,8 @@ static void purge_tmp_residue(int logfd) {
       if (!is_tmp_residue(entry->d_name)) {
         continue;
       }
-      if (count >= (int)(sizeof(names) / sizeof(names[0]))) {
-        if (logfd >= 0) {
-          dprintf(logfd, "tmp purge: residue list full, stopping\n");
-        }
-        break;
-      }
-      snprintf(names[count], sizeof(names[count]), "%s", entry->d_name);
-      count++;
-    }
-    closedir(dir);
-
-    for (int i = 0; i < count; ++i) {
-      char path[PATH_MAX];
       int written = snprintf(path, sizeof(path), "%s/%s", residue_dirs[d],
-                             names[i]);
+                             entry->d_name);
       if (written <= 0 || (size_t)written >= sizeof(path)) {
         continue;
       }
@@ -555,61 +525,12 @@ static void purge_tmp_residue(int logfd) {
       if (strcmp(path, BOOTSTRAP_SOCK_PATH) == 0) {
         continue;
       }
-      if (unlink(path) == 0 || errno == ENOENT) {
-        removed++;
-      } else {
-        failed++;
-        if (logfd >= 0) {
-          dprintf(logfd, "tmp purge: unlink %s: %s\n", path, strerror(errno));
-        }
-      }
-    }
-  }
-
-  /*
-   * Verify, then report.  Silence used to mean "nothing matched" and
-   * "everything was removed" at the same time, which made a half-finished
-   * purge look identical to a clean one -- one residue file survived an
-   * entire install without a single log line mentioning it.
-   *
-   * A survivor here is not cosmetic: /data/local/tmp/ksud-* and temp_su.sock
-   * are exactly the names integrity and banking apps look for.
-   */
-  int survived = 0;
-  for (size_t d = 0; residue_dirs[d] != NULL; ++d) {
-    DIR *dir = opendir(residue_dirs[d]);
-    if (dir == NULL) {
-      continue;
-    }
-    struct dirent *entry = NULL;
-    while ((entry = readdir(dir)) != NULL) {
-      if (strcmp(entry->d_name, ".") == 0 ||
-          strcmp(entry->d_name, "..") == 0) {
-        continue;
-      }
-      if (!is_tmp_residue(entry->d_name)) {
-        continue;
-      }
-      char path[PATH_MAX];
-      int written = snprintf(path, sizeof(path), "%s/%s", residue_dirs[d],
-                             entry->d_name);
-      if (written <= 0 || (size_t)written >= sizeof(path)) {
-        continue;
-      }
-      if (strcmp(path, BOOTSTRAP_SOCK_PATH) == 0) {
-        continue;
-      }
-      survived++;
-      if (logfd >= 0) {
-        dprintf(logfd, "tmp purge: SURVIVED %s\n", path);
+      if (unlink(path) != 0) {
+        dprintf(STDERR_FILENO, "tmp purge: unlink %s: %s\n", path,
+                strerror(errno));
       }
     }
     closedir(dir);
-  }
-
-  if (logfd >= 0) {
-    dprintf(logfd, "tmp purge: removed=%d failed=%d survived=%d\n", removed,
-            failed, survived);
   }
 }
 
@@ -658,33 +579,14 @@ static int run_kernelsu_late_load(struct su_request *request, int conn) {
     if (loader_status != 0) {
       _exit(loader_status);
     }
-    _exit(verify_kernelsu_control());
+    int verify_status = verify_kernelsu_control();
+    if (verify_status == 0) {
+      purge_tmp_residue();
+    }
+    _exit(verify_status);
   }
-
-  /*
-   * Purge from the parent, not from the late-load child.
-   *
-   * The child lives in a private mount namespace and has just bind-mounted the
-   * staged loader over /system/bin/logcat, so the residue it would remove is
-   * the very name the kernel is executing from.  Cleanup there ran only
-   * halfway: .ksud-stage disappeared, ksud-s25u-kdp survived, and nothing was
-   * reported.  This parent is still in the daemon's normal namespace with no
-   * bind mount of its own, which is the context cleanup was always meant for.
-   *
-   * The exit status is reported unchanged: a cleanup that cannot finish must
-   * not turn a successful install into a failure.
-   */
-  int purge_fd = request->stderr_fd >= 0 ? dup(request->stderr_fd) : -1;
   close_request_fds(request);
-
-  int status = wait_status(pid);
-  if (status == 0) {
-    purge_tmp_residue(purge_fd);
-  }
-  if (purge_fd >= 0) {
-    close(purge_fd);
-  }
-  return status;
+  return wait_status(pid);
 }
 
 static void send_response(int conn, int status) {
