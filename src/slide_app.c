@@ -461,8 +461,18 @@ int slide_child_trigger_write(void) {
 
 /* --- Fops trigger route (also uses the pselect/mcast mechanism) ---------- */
 
-static uint64_t slide_select_route_fine_delay_ticks(void) {
+static uint64_t slide_select_route_fine_delay_ticks(size_t call_index) {
 #if defined(FOPS_ROUTE_FINE_DELAY_TICKS)
+  const char *override_text = getenv("FINE_TICKS_OVERRIDE");
+  if (override_text && *override_text) {
+    char *override_end = NULL;
+    errno = 0;
+    unsigned long long override_value =
+        strtoull(override_text, &override_end, 0);
+    if (!errno && override_end != override_text && !*override_end) {
+      return (uint64_t)override_value;
+    }
+  }
   static const uint64_t delays[] = {
     FOPS_ROUTE_FINE_DELAY_TICKS
   };
@@ -478,8 +488,19 @@ static uint64_t slide_select_route_fine_delay_ticks(void) {
     }
     attempt = value;
   }
-  return delays[(attempt - 1) % (sizeof(delays) / sizeof(delays[0]))];
+  /*
+   * Indexing by the supervisor attempt alone left every in-process retry of
+   * the fops stage on the same ladder entry: the supervisor refuses a
+   * cross-process retry once a write has landed, so attempt 1 is normally the
+   * only supervisor attempt this device ever runs.  Folding in the per-process
+   * call index makes attempt 1 use entry 0 exactly as before (0ULL, no delay)
+   * and the next fops retry use entry 1, so the calibrated ladder is actually
+   * exercised instead of being pinned to its first value.
+   */
+  return delays[(attempt - 1 + call_index) %
+                (sizeof(delays) / sizeof(delays[0]))];
 #else
+  (void)call_index;
   return 0;
 #endif
 }
@@ -533,7 +554,8 @@ static int app_trigger_fops_slide_slot(size_t slot) {
     return 0;
   }
   delay_index++;
-  slide_route_fine_delay_ticks = slide_select_route_fine_delay_ticks();
+  slide_route_fine_delay_ticks =
+      slide_select_route_fine_delay_ticks(delay_index - 1);
   if (slide_route_fine_delay_ticks == UINT64_MAX) {
     return 0;
   }
@@ -617,7 +639,8 @@ int app_trigger_fops_slide_route(void) {
     return 0;
   }
   delay_index++;
-  slide_route_fine_delay_ticks = slide_select_route_fine_delay_ticks();
+  slide_route_fine_delay_ticks =
+      slide_select_route_fine_delay_ticks(delay_index - 1);
   if (slide_route_fine_delay_ticks == UINT64_MAX) {
     return 0;
   }
