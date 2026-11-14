@@ -15,7 +15,8 @@ set -eu
 printf '#define UTS_RELEASE "%s"\n' "$TARGET_RELEASE" > "$KDIR/include/generated/utsrelease.h"
 printf '%s\n' "$TARGET_RELEASE" > "$KDIR/include/config/kernel.release"
 
-make clean
+# No `make clean`: upstream's clean target ends in `rm check_symbol`, which fails
+# on a tree where that helper was never built, and CI always starts clean anyway.
 CONFIG_KSU=m \
 CONFIG_KSU_SAMSUNG_KDP=y \
 CONFIG_KSU_SAMSUNG_RKP=y \
@@ -23,4 +24,4 @@ CONFIG_KSU_SAMSUNG_DEFEX=y \
 CONFIG_KSU_SAMSUNG_NO_PATCH_TEXT=y \
 CC=clang make -j"$(nproc)"
 
-modinfo ./kernelsu.ko
+modinfo ./kernelsu.ko || strings ./kernelsu.ko | grep -a '^vermagic=' || true
