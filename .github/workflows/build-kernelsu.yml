@@ -1,0 +1,88 @@
+name: Build KernelSU — SM-A546E (a54x-A546EXXSLFZG3)
+
+# LKM only: builds kernelsu.ko for the exact target release, audits it against
+# the recovered target vmlinux, and strips it.  ksud is built separately.
+on:
+  workflow_dispatch:
+
+env:
+  KSU_REPO: tiann/KernelSU
+  KSU_TAG: v3.3.1
+  DDK_IMAGE: ghcr.io/ylarod/ddk-min:android13-5.15-20260313
+  KMI: android13-5.15
+  TARGET_RELEASE: 5.15.189-android13-3-33470412
+
+jobs:
+  module:
+    name: Build and audit kernelsu.ko
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout payload repo
+        uses: actions/checkout@v4
+        with:
+          path: payload
+
+      - name: Checkout KernelSU
+        uses: actions/checkout@v4
+        with:
+          repository: tiann/KernelSU
+          ref: v3.3.1
+          path: KernelSU
+
+      - name: Apply the Samsung KDP/RKP/DEFEX patch
+        working-directory: KernelSU
+        run: |
+          git apply --verbose ../payload/kernelsu/patches/KernelSU-v3.3.1-samsung-kdp-rkp-defex.patch
+
+      - name: Probe the DDK environment
+        run: |
+          docker run --rm \
+            -v "$PWD/KernelSU:/workspace" \
+            -w /workspace/kernel \
+            "$DDK_IMAGE" \
+            bash -lc 'echo "KDIR=$KDIR"; cat "$KDIR/include/config/kernel.release"; grep UTS_RELEASE "$KDIR/include/generated/utsrelease.h"; clang --version | head -1'
+
+      - name: Build the module
+        run: |
+          docker run --rm \
+            -e TARGET_RELEASE="$TARGET_RELEASE" \
+            -v "$PWD/KernelSU:/workspace" \
+            -v "$PWD/payload/kernelsu/tools:/ddk-tools:ro" \
+            -w /workspace/kernel \
+            "$DDK_IMAGE" \
+            sh /ddk-tools/ddk-build-module.sh
+
+      - name: Gate on vermagic
+        run: |
+          VERMAGIC=$(strings KernelSU/kernel/kernelsu.ko | grep -a '^vermagic=' | head -1)
+          echo "built vermagic: $VERMAGIC"
+          if [ "$VERMAGIC" != "vermagic=$TARGET_RELEASE SMP preempt mod_unload modversions aarch64" ]; then
+            echo "::error::vermagic does not match the target release"
+            exit 1
+          fi
+
+      - name: Audit against the target vmlinux
+        run: |
+          python3 -m pip install --quiet pyelftools
+          python3 payload/kernelsu/tools/extract_target_symvers.py \
+            payload/kernelsu/targets/a54x-A546EXXSLFZG3/vmlinux.elf \
+            target_symvers.txt
+          python3 payload/kernelsu/tools/audit_module_against_target.py \
+            KernelSU/kernel/kernelsu.ko \
+            payload/kernelsu/targets/a54x-A546EXXSLFZG3/vmlinux.elf \
+            target_symvers.txt \
+            --manual-relocation
+
+      - name: Strip debug sections
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm
+          llvm-strip --strip-debug KernelSU/kernel/kernelsu.ko
+          ls -la KernelSU/kernel/kernelsu.ko
+
+      - name: Upload the module
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.KMI }}-kernelsu-ko
+          path: KernelSU/kernel/kernelsu.ko
+          if-no-files-found: error
