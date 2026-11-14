@@ -86,3 +86,73 @@ jobs:
           name: ${{ env.KMI }}-kernelsu-ko
           path: KernelSU/kernel/kernelsu.ko
           if-no-files-found: error
+
+  ksud:
+    name: Build ksud with the module embedded
+    needs: module
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout payload repo
+        uses: actions/checkout@v4
+        with:
+          path: payload
+
+      - name: Checkout KernelSU
+        uses: actions/checkout@v4
+        with:
+          repository: tiann/KernelSU
+          ref: v3.3.1
+          path: KernelSU
+
+      - name: Apply the Samsung KDP/RKP/DEFEX patch
+        working-directory: KernelSU
+        run: |
+          git apply --verbose ../payload/kernelsu/patches/KernelSU-v3.3.1-samsung-kdp-rkp-defex.patch
+
+      - name: Download the module built above
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.KMI }}-kernelsu-ko
+          path: lkm
+
+      # ksud late-loads the module embedded at bin/<arch>/<kmi>_kernelsu.ko, so the
+      # .ko has to be in place before cargo runs.
+      - name: Embed the module
+        run: cp lkm/kernelsu.ko "KernelSU/userspace/ksud/bin/aarch64/${KMI}_kernelsu.ko"
+
+      - name: Set up rust and the NDK
+        run: |
+          rustup update stable
+          rustup target add aarch64-linux-android
+
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r29
+
+      - name: Build ksud
+        working-directory: KernelSU
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          source .github/scripts/setup-rust-build.sh aarch64-linux-android 26
+          cargo build --target "$TRIPLE" --release --manifest-path ./userspace/ksud/Cargo.toml
+
+      - name: Check the module is really embedded
+        run: |
+          KSUD=KernelSU/target/aarch64-linux-android/release/ksud
+          strings "$KSUD" | grep -a '^vermagic=' || { echo "::error::no vermagic in ksud, module not embedded"; exit 1; }
+
+      - name: Strip and report ksud
+        run: |
+          KSUD=KernelSU/target/aarch64-linux-android/release/ksud
+          "${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" -s "$KSUD"
+          ls -la "$KSUD"
+          sha256sum "$KSUD"
+
+      - name: Upload ksud
+        uses: actions/upload-artifact@v4
+        with:
+          name: ksud-aarch64
+          path: KernelSU/target/aarch64-linux-android/release/ksud
+          if-no-files-found: error
