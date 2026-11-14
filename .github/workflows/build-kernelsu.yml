@@ -79,6 +79,7 @@ jobs:
           sudo apt-get install -y -qq llvm
           llvm-strip --strip-debug KernelSU/kernel/kernelsu.ko
           ls -la KernelSU/kernel/kernelsu.ko
+          sha256sum KernelSU/kernel/kernelsu.ko
 
       - name: Upload the module
         uses: actions/upload-artifact@v4
@@ -118,7 +119,10 @@ jobs:
       # ksud late-loads the module embedded at bin/<arch>/<kmi>_kernelsu.ko, so the
       # .ko has to be in place before cargo runs.
       - name: Embed the module
-        run: cp lkm/kernelsu.ko "KernelSU/userspace/ksud/bin/aarch64/${KMI}_kernelsu.ko"
+        run: |
+          cp lkm/kernelsu.ko "KernelSU/userspace/ksud/bin/aarch64/${KMI}_kernelsu.ko"
+          ls -la "KernelSU/userspace/ksud/bin/aarch64/"
+          sha256sum "KernelSU/userspace/ksud/bin/aarch64/${KMI}_kernelsu.ko"
 
       - name: Set up rust and the NDK
         run: |
@@ -141,7 +145,12 @@ jobs:
       - name: Check the module is really embedded
         run: |
           KSUD=KernelSU/target/aarch64-linux-android/release/ksud
-          strings "$KSUD" | grep -a '^vermagic=' || { echo "::error::no vermagic in ksud, module not embedded"; exit 1; }
+          ls -la "$KSUD"
+          # rust-embed compresses the asset before embedding it, so the module's
+          # own contents (vermagic included) never appear as plain strings. Only
+          # the asset name does.
+          strings "$KSUD" | grep -aq "${KMI}_kernelsu.ko" || { echo "::error::asset ${KMI}_kernelsu.ko missing from ksud"; exit 1; }
+          echo "embedded asset name found in ksud"
 
       - name: Strip and report ksud
         run: |
