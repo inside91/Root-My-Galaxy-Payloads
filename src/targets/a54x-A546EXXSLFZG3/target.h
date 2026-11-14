@@ -23,7 +23,12 @@
 /* ---------------------------------------------------------------------------
  * Route / build tuning
  * ------------------------------------------------------------------------- */
-#define SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS 2
+/* One pass only. The second pass repeats the whole 256-scan reclaim in-process,
+ * and across every recorded run it has never completed: 31 prepare events all
+ * ran attempt 1, and the single run that entered attempt 2 panicked inside it.
+ * The supervisor already retries with a fresh process, fresh heap and a quiet
+ * window, which is what the successful runs actually used. */
+#define SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS 1
 #define FOPS_KERNEL_PAGE_SETUP_ATTEMPTS 12
 /*
  * In-process retry counts for the p0 gate and the fops slide.
